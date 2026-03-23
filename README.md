@@ -6,6 +6,29 @@ apt-oob integrates with the standard apt upgrade process and runs automatically 
 
 ---
 
+## CLI Usage
+
+```
+oob upgrade            # Check and upgrade all configured packages
+oob upgrade <name>     # Check and upgrade a single package by NAME
+oob list               # List all configured packages and their installed versions
+oob status <name>      # Show detailed state for a single package
+```
+
+---
+
+## Upgrade Behavior
+
+`oob upgrade` iterates over all conf.d entries in lexical order. For each package:
+
+1. The version check script runs to determine the latest available version.
+2. If the installed version (from state/) already matches, a message is logged and the package is skipped.
+3. Otherwise the download, verification, extraction, and symlink steps proceed.
+
+Per-package failures (download errors, checksum mismatches, version check failures) are logged and the failing package is skipped, but processing continues for remaining packages. This ensures every configured package gets a chance to update. Because partial failures are handled internally, `oob` exits `0` unless a genuine fatal error occurs — this avoids false post-invoke failures reported by apt.
+
+---
+
 ## APT Integration
 
 apt-oob registers itself as an apt post-invoke hook by dropping a configuration file into `/etc/apt/apt.conf.d/`:
@@ -28,13 +51,18 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 ├── conf.d/                  # Package configuration files (sourced in lexical order)
 │   ├── 10-golang
 │   └── 20-minecraft
-├── vcheck/                  # Version check scripts (print latest version string to stdout)
+├── checkver/                # Version check scripts (print latest version string to stdout)
 │   ├── golang-check.sh
 │   └── minecraft-check.sh
 ├── dload/                   # Download URL resolution scripts (receive version as $1, print URL to stdout)
 │   ├── golang-download.sh
 │   └── minecraft-download.sh
-├── keys/                    # ASCII-armored GPG public keys for package verification (.asc files)
+├── checksum/                # Checksum scripts (print algo:hash to stdout)
+│   ├── golang-checksum.sh
+│   └── firefox-verify.sh
+├── checksig/                # Signature verification scripts (verify detached GPG signatures)
+│   └── golang-sigcheck.sh
+├── keys/                    # ASCII-armored GPG public keys (.asc files) used by checksig scripts
 │   └── golang-signing.asc
 ├── live/                    # Extracted package installations
 │   └── golang/
@@ -53,7 +81,7 @@ Configuration files are plain shell-sourceable key=value files. They are loaded 
 
 ### Template Variables
 
-The following variables are available for use in `DOWNLOAD`, `VERIFY_CHECKSUM_URL`, and `VERIFY_GPG_SIG_URL` when those fields contain an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
+The following variables are available for use in `DOWNLOAD` when it contains an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
 
 | Variable | Description |
 |---|---|
@@ -78,32 +106,29 @@ NAME="golang"
 DOWNLOAD="golang-download.sh"
 # or: DOWNLOAD="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz"
 
-# Verification method: checksum_url | gpg | script | none
-VERIFY_METHOD="checksum_url"
+# Checksum method. Either:
+#   none         — skip verification entirely for this package
+#   script name  — resolved under apt-oob/checksum/, receives version as $1,
+#                  must print "algo:hash" to stdout (e.g. sha256:abc123...) and exit 0
+CHECKSUM="golang-verify.sh"
+# or: CHECKSUM="none"
 
-# URL to fetch checksum file from (used when VERIFY_METHOD=checksum_url)
-# Supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
-VERIFY_CHECKSUM_URL="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz.sha256"
+# Signature verification script under apt-oob/checksig/
+# Receives version as $1 and path to downloaded archive as $2
+# Responsible for fetching the detached signature and verifying against a key in apt-oob/keys/
+# Must exit 0 on success, non-zero on failure
+# If both CHECKSUM and CHECKSIG are set, both must pass
+CHECKSIG="golang-sigcheck.sh"
+# or: CHECKSIG="none"
 
-# ASCII-armored public key filename under apt-oob/keys/ (used when VERIFY_METHOD=gpg)
-# Key is imported into a temporary isolated keyring at verify time — the system keyring is never touched
-#VERIFY_GPG_KEY="golang-signing.asc"
-
-# URL to fetch the detached signature file from (used when VERIFY_METHOD=gpg)
-# Supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
-#VERIFY_GPG_SIG_URL="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz.asc"
-
-# Verification script under apt-oob/vcheck/ (used when VERIFY_METHOD=script)
-# Receives path to downloaded archive as $1. Must exit 0 on success, 1 on failure
-#VERIFY_SCRIPT="golang-verify.sh"
-
-# Version check script under apt-oob/vcheck/
+# Version check script under apt-oob/checkver/
 # Must print the latest available version string to stdout and exit 0 on success
 VERSION_CHECK="golang-check.sh"
 
 # Base directory to extract the package archive into
 # The tarball is extracted as-is — no renaming or stripping of top-level directories
 # Actual install path is recorded in state after extraction
+# OOB_LIVE is a built-in variable set to /usr/local/apt-oob/live
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 
 # Space-separated list of symlinks to create
@@ -126,15 +151,16 @@ Each installed package has a corresponding state file under `state/`. These are 
 INSTALLED_VERSION="1.21.6"
 INSTALL_DATE="2026-03-22T10:23:00Z"
 INSTALL_PATH="/usr/local/apt-oob/live/golang/go"
-CHECKSUM_SHA256="abc123def456..."
 SYMLINKS="go:/usr/local/bin/go gofmt:/usr/local/bin/gofmt"
 ```
 
+Note: In conf.d, `SYMLINKS` paths are relative to `INSTALL_DIR` (e.g. `go:go/bin/go`). In state files, `SYMLINKS` records the resolved absolute paths (e.g. `go:/usr/local/bin/go`).
+
 ---
 
-## vcheck/ Scripts
+## checkver/ Scripts
 
-Scripts placed under `vcheck/` are responsible for discovering the latest available version of a package. They must:
+Scripts placed under `checkver/` are responsible for discovering the latest available version of a package. They must:
 
 - Print a single version string to stdout (e.g. `1.22.0`)
 - Exit `0` on success
@@ -153,6 +179,35 @@ Scripts placed under `dload/` are responsible for resolving the download URL for
 
 ---
 
+## checksum/ Scripts
+
+Scripts placed under `checksum/` are responsible for producing the expected checksum for a given version. They must:
+
+- Accept the version string as `$1`
+- Print a single `algo:hash` string to stdout (e.g. `sha256:abc123...` or `sha512:def456...`)
+- Supported algorithms: `sha256`, `sha512`
+- Exit `0` on success
+- Exit non-zero if the checksum cannot be determined
+
+`oob` computes the matching hash of the downloaded archive and compares it against the script output.
+
+---
+
+## checksig/ Scripts
+
+Scripts placed under `checksig/` are responsible for verifying the GPG signature of a downloaded archive. They must:
+
+- Accept the version string as `$1` and the path to the downloaded archive as `$2`
+- Fetch the detached signature for the given version
+- Import the appropriate key from `apt-oob/keys/` into a temporary isolated keyring (the system keyring is never touched)
+- Verify the signature against the archive
+- Exit `0` on verification success
+- Exit non-zero on failure
+
+If both `CHECKSUM` and `CHECKSIG` are configured for a package, both must pass for the upgrade to proceed.
+
+---
+
 ## keys/
 
-ASCII-armored GPG public key files (`.asc`) used for verification when `VERIFY_METHOD=gpg`. Referenced by filename in `VERIFY_GPG_KEY`. At verification time `oob` imports the key into a temporary isolated keyring and verifies the detached signature against the downloaded archive. The system GPG keyring is never read from or written to.
+ASCII-armored GPG public key files (`.asc`) used by `checksig/` scripts. Each script is responsible for importing the appropriate key into a temporary keyring at verify time. The system GPG keyring is never read from or written to.
