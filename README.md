@@ -102,7 +102,7 @@ Mar 22 10:23:02 oob[12345]: [ERROR] minecraft: download failed
 apt-oob registers itself as an apt post-invoke hook by dropping a configuration file into `/etc/apt/apt.conf.d/`:
 
 ```
-# /etc/apt/apt.conf.d/99apt-oob
+# /etc/apt/apt.conf.d/99-apt-oob
 DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install -q; fi";};
 ```
 
@@ -142,6 +142,23 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 ```
 
 **Logging** is written to `/var/log/apt-oob.log`.
+
+---
+
+## Global Configuration
+
+`/etc/apt-oob.conf` is an optional shell-sourceable configuration file for overriding oob defaults. It is sourced at startup before paths are derived. If the file does not exist, built-in defaults are used.
+
+```sh
+# /etc/apt-oob.conf
+OOB_BASE="/usr/local/apt-oob"
+LOG_FILE="/var/log/apt-oob.log"
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `OOB_BASE` | `/usr/local/apt-oob` | Root directory for all apt-oob files |
+| `LOG_FILE` | `/var/log/apt-oob.log` | Log file path |
 
 ---
 

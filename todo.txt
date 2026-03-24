@@ -1,13 +1,14 @@
 ## 1. Script skeleton & globals
 - [ ] Shebang, set -euo pipefail
-- [ ] OOB_BASE="/usr/local/apt-oob"
+- [ ] Source /etc/apt-oob.conf if it exists (before deriving paths)
+- [ ] OOB_BASE="/usr/local/apt-oob" (overridable via apt-oob.conf)
+- [ ] LOG_FILE="/var/log/apt-oob.log" (overridable via apt-oob.conf)
 - [ ] Derived paths: OOB_CONF, OOB_CHECKVER, OOB_DLOAD, OOB_CHECKSUM, OOB_CHECKSIG, OOB_KEYS, OOB_LIVE, OOB_STATE
-- [ ] LOG_FILE="/var/log/apt-oob.log"
-- [ ] APT_HOOK="/etc/apt/apt.conf.d/99apt-oob"
+- [ ] APT_HOOK="/etc/apt/apt.conf.d/99-apt-oob"
 - [ ] Root check — exit 1 if EUID != 0
 
 ## 2. Flag parsing
-- [ ] Parse -f/--force, -n/--dry-run, -v/--verbose, -q/--quiet
+- [ ] Parse -f/--force, -n/--dry-run, -v/--verbose, -q/--quiet, -h/--help
 - [ ] Parse subcommand: install, check, remove, list, status, init, deinit
 - [ ] Parse optional [name] argument for install, check, status, remove
 
@@ -90,9 +91,28 @@
 - [ ] Run version check, show if update available
 
 ## 17. Command: init
+- [ ] Create oob directory structure under /usr/local/apt-oob
 - [ ] Check if APT_HOOK exists — warn and prompt to overwrite
 - [ ] Write the DPkg::Post-Invoke line to APT_HOOK
 
 ## 18. Command: deinit
 - [ ] Remove APT_HOOK file if it exists
 - [ ] Warn if it doesn't exist
+
+## 19. Unit tests (unit-tests/)
+- [ ] helpers.sh — shared setup/teardown, temp OOB_BASE, source oob functions
+- [ ] run.sh — test runner, executes all test files, reports pass/fail summary
+- [ ] expand_template.sh — 3-component, 2-component, empty revision
+- [ ] conf_loader.sh — valid conf, missing fields, omitted CHECKSUM/CHECKSIG warnings
+- [ ] state.sh — write_state atomic mv, read_state, missing state file
+- [ ] symlinks.sh — create_symlinks, remove_symlinks, resolved paths
+- [ ] extract_archive.sh — tar.gz, tar.xz, tar.bz2, zip, unsupported format
+- [ ] checksum.sh — sha256 match, sha512 match, mismatch, bad algo, script not found
+- [ ] checksig.sh — pass, fail, script not found, "none" skip
+- [ ] init.sh — creates directory structure, writes apt hook, warns on existing
+- [ ] deinit.sh — removes hook, warns if missing
+- [ ] install.sh — new install, skip current version, --force reinstall, --dry-run
+- [ ] check.sh — up to date, update available, not installed
+- [ ] remove.sh — removes files/symlinks/state, --force skips prompt, --dry-run
+- [ ] list.sh — installed packages, configured but not installed
+- [ ] status.sh — shows state, checks for update

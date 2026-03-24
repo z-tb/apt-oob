@@ -1,0 +1,735 @@
+#!/bin/bash
+set -euo pipefail
+
+# --- Globals (defaults, overridable via /etc/apt-oob.conf or environment) ---
+: "${OOB_BASE:="/usr/local/apt-oob"}"
+: "${LOG_FILE:="/var/log/apt-oob.log"}"
+
+# Source global config if it exists (before deriving paths)
+[[ -f /etc/apt-oob.conf ]] && source /etc/apt-oob.conf
+
+OOB_CONF="${OOB_BASE}/conf.d"
+OOB_CHECKVER="${OOB_BASE}/checkver"
+OOB_DLOAD="${OOB_BASE}/dload"
+OOB_CHECKSUM="${OOB_BASE}/checksum"
+OOB_CHECKSIG="${OOB_BASE}/checksig"
+OOB_KEYS="${OOB_BASE}/keys"
+OOB_LIVE="${OOB_BASE}/live"
+OOB_STATE="${OOB_BASE}/state"
+APT_HOOK="/etc/apt/apt.conf.d/99-apt-oob"
+
+FLAG_FORCE=0
+FLAG_DRYRUN=0
+FLAG_VERBOSE=0
+FLAG_QUIET=0
+
+# --- Output functions ---
+_log() {
+    local level="$1"; shift
+    local msg="$*"
+    local ts
+    ts=$(date '+%b %d %H:%M:%S')
+    echo "${ts} oob[$$]: [${level}] ${msg}" >> "$LOG_FILE"
+}
+
+info() {
+    _log "INFO" "$*"
+    (( FLAG_QUIET )) || printf '\033[0;36m%s\033[0m\n' "$*"
+}
+
+warn() {
+    _log "WARN" "$*"
+    (( FLAG_QUIET )) || printf '\033[0;33m%s\033[0m\n' "$*" >&2
+}
+
+error() {
+    _log "ERROR" "$*"
+    (( FLAG_QUIET )) || printf '\033[0;31m%s\033[0m\n' "$*" >&2
+}
+
+success() {
+    _log "INFO" "$*"
+    (( FLAG_QUIET )) || printf '\033[0;32m%s\033[0m\n' "$*"
+}
+
+highlight() {
+    (( FLAG_QUIET )) || printf '\033[0;35m%s\033[0m\n' "$*"
+}
+
+bold() {
+    (( FLAG_QUIET )) || printf '\033[1;37m%s\033[0m\n' "$*"
+}
+
+
+# --- Root check ---
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "oob must be run as root"
+        exit 1
+    fi
+}
+
+# --- Help ---
+show_help() {
+    cat <<'HELP'
+usage: oob <command> [name] [flags]
+
+commands:
+  install [name]     Install/update all configured packages, or a single package
+  check [name]       Check available versions without installing
+  remove <name>      Remove installed files, symlinks, and state for a package
+  list               List all configured packages and their installed versions
+  status <name>      Show detailed state and check for updates
+  init               Create directory structure and install apt hook
+  deinit             Remove the apt post-invoke hook
+
+flags:
+  -f, --force        install: reinstall regardless of version. remove: skip prompt
+  -n, --dry-run      Show what would happen without making changes
+  -v, --verbose      Increase terminal output detail
+  -q, --quiet        Suppress terminal output; log to file only
+  -h, --help         Show this help message
+HELP
+}
+
+# --- Flag & argument parsing ---
+COMMAND=""
+TARGET_NAME=""
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f|--force)   FLAG_FORCE=1 ;;
+            -n|--dry-run) FLAG_DRYRUN=1 ;;
+            -v|--verbose) FLAG_VERBOSE=1 ;;
+            -q|--quiet)   FLAG_QUIET=1 ;;
+            -h|--help)    show_help; exit 0 ;;
+            install|check|remove|list|status|init|deinit)
+                COMMAND="$1"
+                ;;
+            *)
+                if [[ -n "$COMMAND" && -z "$TARGET_NAME" ]]; then
+                    TARGET_NAME="$1"
+                else
+                    error "unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [[ -z "$COMMAND" ]]; then
+        error "usage: oob <install|check|remove|list|status|init|deinit> [name] [flags]"
+        exit 1
+    fi
+}
+
+# --- Helper: conf.d loader ---
+# Conf variables — reset between packages
+_reset_conf() {
+    NAME=""
+    DOWNLOAD=""
+    unset CHECKSUM
+    unset CHECKSIG
+    VERSION_CHECK=""
+    INSTALL_DIR=""
+    SYMLINKS=""
+    SYMLINK_DIR=""
+}
+
+load_conf() {
+    local conf_file="$1"
+    _reset_conf
+    # shellcheck disable=SC1090
+    source "$conf_file"
+
+    local missing=()
+    [[ -z "$NAME" ]]          && missing+=("NAME")
+    [[ -z "$DOWNLOAD" ]]      && missing+=("DOWNLOAD")
+    [[ -z "$VERSION_CHECK" ]] && missing+=("VERSION_CHECK")
+    [[ -z "$INSTALL_DIR" ]]   && missing+=("INSTALL_DIR")
+    [[ -z "$SYMLINKS" ]]      && missing+=("SYMLINKS")
+    [[ -z "$SYMLINK_DIR" ]]   && missing+=("SYMLINK_DIR")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        error "${conf_file}: missing required fields: ${missing[*]}"
+        return 1
+    fi
+
+    # Warn on omitted (not "none") CHECKSUM/CHECKSIG
+    if [[ -z "${CHECKSUM+x}" ]]; then
+        warn "${NAME}: CHECKSUM not set, intent unclear — skipping checksum verification"
+        CHECKSUM="none"
+    fi
+    if [[ -z "${CHECKSIG+x}" ]]; then
+        warn "${NAME}: CHECKSIG not set, intent unclear — skipping signature verification"
+        CHECKSIG="none"
+    fi
+
+    return 0
+}
+
+# Find conf.d file by package NAME
+find_conf_by_name() {
+    local target="$1"
+    for f in "${OOB_CONF}"/*; do
+        [[ -f "$f" ]] || continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$f"
+        if [[ "$NAME" == "$target" ]]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+
+# --- Helper: template variable substitution ---
+expand_template() {
+    local version="$1"
+    local url="$2"
+
+    local major minor revision
+    IFS='.' read -r major minor revision <<< "$version"
+    major="${major:-}"
+    minor="${minor:-}"
+    revision="${revision:-}"
+
+    url="${url//\{VERSION\}/$version}"
+    url="${url//\{MAJOR\}/$major}"
+    url="${url//\{MINOR\}/$minor}"
+    url="${url//\{REVISION\}/$revision}"
+    echo "$url"
+}
+
+# --- Helper: resolve download URL ---
+resolve_download_url() {
+    local version="$1"
+    local download="$2"
+
+    if [[ "$download" == https://* ]]; then
+        expand_template "$version" "$download"
+    else
+        local script="${OOB_DLOAD}/${download}"
+        if [[ ! -x "$script" ]]; then
+            error "${NAME}: download script not found or not executable: ${script}"
+            return 1
+        fi
+        "$script" "$version"
+    fi
+}
+
+# --- Helper: archive extraction ---
+extract_archive() {
+    local archive="$1"
+    local dest="$2"
+
+    mkdir -p "$dest"
+
+    case "$archive" in
+        *.tar.gz|*.tgz)    tar xzf "$archive" -C "$dest" ;;
+        *.tar.xz|*.txz)    tar xJf "$archive" -C "$dest" ;;
+        *.tar.bz2|*.tbz2)  tar xjf "$archive" -C "$dest" ;;
+        *.tar)              tar xf  "$archive" -C "$dest" ;;
+        *.zip)              unzip -qo "$archive" -d "$dest" ;;
+        *)
+            error "${NAME}: unsupported archive format: ${archive}"
+            return 1
+            ;;
+    esac
+}
+
+# --- Helper: checksum verification ---
+run_checksum() {
+    local version="$1"
+    local archive="$2"
+
+    if [[ "$CHECKSUM" == "none" ]]; then
+        return 0
+    fi
+
+    local script="${OOB_CHECKSUM}/${CHECKSUM}"
+    if [[ ! -x "$script" ]]; then
+        error "${NAME}: checksum script not found or not executable: ${script}"
+        return 1
+    fi
+
+    local output
+    output=$("$script" "$version") || {
+        error "${NAME}: checksum script failed"
+        return 1
+    }
+
+    local algo hash
+    IFS=':' read -r algo hash <<< "$output"
+
+    local computed
+    case "$algo" in
+        sha256) computed=$(sha256sum "$archive" | awk '{print $1}') ;;
+        sha512) computed=$(sha512sum "$archive" | awk '{print $1}') ;;
+        *)
+            error "${NAME}: unsupported checksum algorithm: ${algo}"
+            return 1
+            ;;
+    esac
+
+    if [[ "$computed" != "$hash" ]]; then
+        error "${NAME}: checksum mismatch (${algo})"
+        error "  expected: ${hash}"
+        error "  got:      ${computed}"
+        return 1
+    fi
+
+    (( FLAG_VERBOSE )) && info "${NAME}: checksum verified (${algo})"
+    return 0
+}
+
+# --- Helper: signature verification ---
+run_checksig() {
+    local version="$1"
+    local archive="$2"
+
+    if [[ "$CHECKSIG" == "none" ]]; then
+        return 0
+    fi
+
+    local script="${OOB_CHECKSIG}/${CHECKSIG}"
+    if [[ ! -x "$script" ]]; then
+        error "${NAME}: checksig script not found or not executable: ${script}"
+        return 1
+    fi
+
+    "$script" "$version" "$archive" || {
+        error "${NAME}: signature verification failed"
+        return 1
+    }
+
+    (( FLAG_VERBOSE )) && info "${NAME}: signature verified"
+    return 0
+}
+
+
+# --- Helper: symlink management ---
+create_symlinks() {
+    local install_dir="$1"
+    local symlink_dir="$2"
+    local symlinks="$3"
+    local resolved=""
+
+    mkdir -p "$symlink_dir"
+
+    for entry in $symlinks; do
+        local linkname="${entry%%:*}"
+        local relpath="${entry#*:}"
+        local target="${install_dir}/${relpath}"
+        local linkpath="${symlink_dir}/${linkname}"
+
+        if (( FLAG_DRYRUN )); then
+            info "${NAME}: would symlink ${linkpath} -> ${target}"
+        else
+            ln -sf "$target" "$linkpath"
+            (( FLAG_VERBOSE )) && info "${NAME}: symlink ${linkpath} -> ${target}"
+        fi
+
+        [[ -n "$resolved" ]] && resolved+=" "
+        resolved+="${linkname}:${linkpath}"
+    done
+
+    echo "$resolved"
+}
+
+remove_symlinks() {
+    local symlinks="$1"
+
+    for entry in $symlinks; do
+        local linkpath="${entry#*:}"
+        if [[ -L "$linkpath" ]]; then
+            if (( FLAG_DRYRUN )); then
+                info "would remove symlink ${linkpath}"
+            else
+                rm -f "$linkpath"
+                (( FLAG_VERBOSE )) && info "removed symlink ${linkpath}"
+            fi
+        fi
+    done
+}
+
+# --- Helper: state file management ---
+read_state() {
+    local name="$1"
+    local state_file="${OOB_STATE}/${name}"
+
+    INSTALLED_VERSION=""
+    INSTALL_DATE=""
+    INSTALL_PATH=""
+    STATE_SYMLINKS=""
+
+    if [[ -f "$state_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$state_file"
+        STATE_SYMLINKS="${SYMLINKS:-}"
+        return 0
+    fi
+    return 1
+}
+
+write_state() {
+    local name="$1"
+    local version="$2"
+    local install_path="$3"
+    local resolved_symlinks="$4"
+
+    mkdir -p "$OOB_STATE"
+
+    local tmp
+    tmp=$(mktemp "${OOB_STATE}/.${name}.XXXXXX")
+    cat > "$tmp" <<EOF
+INSTALLED_VERSION="${version}"
+INSTALL_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+INSTALL_PATH="${install_path}"
+SYMLINKS="${resolved_symlinks}"
+EOF
+    mv "$tmp" "${OOB_STATE}/${name}"
+}
+
+# --- Helper: version check ---
+run_version_check() {
+    local name="$1"
+    local version_check="$2"
+
+    local script="${OOB_CHECKVER}/${version_check}"
+    if [[ ! -x "$script" ]]; then
+        error "${name}: version check script not found or not executable: ${script}"
+        return 1
+    fi
+
+    local version
+    version=$("$script") || {
+        error "${name}: version check failed"
+        return 1
+    }
+
+    if [[ -z "$version" ]]; then
+        error "${name}: version check returned empty string"
+        return 1
+    fi
+
+    echo "$version"
+}
+
+
+# --- Command: install ---
+cmd_install_package() {
+    local conf_file="$1"
+
+    load_conf "$conf_file" || return 1
+
+    local available
+    available=$(run_version_check "$NAME" "$VERSION_CHECK") || return 1
+
+    # Check if already installed at this version
+    if read_state "$NAME"; then
+        if [[ "$INSTALLED_VERSION" == "$available" ]] && (( ! FLAG_FORCE )); then
+            info "${NAME}: already at version ${available}"
+            return 0
+        fi
+    fi
+
+    if (( FLAG_DRYRUN )); then
+        info "${NAME}: would install version ${available}"
+        info "${NAME}: would download from $(resolve_download_url "$available" "$DOWNLOAD")"
+        [[ "$CHECKSUM" != "none" ]] && info "${NAME}: would verify checksum via ${CHECKSUM}"
+        [[ "$CHECKSIG" != "none" ]] && info "${NAME}: would verify signature via ${CHECKSIG}"
+        info "${NAME}: would extract to ${INSTALL_DIR}"
+        create_symlinks "$INSTALL_DIR" "$SYMLINK_DIR" "$SYMLINKS" > /dev/null
+        return 0
+    fi
+
+    # Download
+    local tmpdir
+    tmpdir=$(mktemp -d "/tmp/oob.${NAME}.XXXXXX")
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmpdir'" RETURN
+
+    local url
+    url=$(resolve_download_url "$available" "$DOWNLOAD") || return 1
+
+    local filename
+    filename=$(basename "$url" | sed 's/?.*//')
+    local archive="${tmpdir}/${filename}"
+
+    info "${NAME}: downloading ${url}"
+    if ! curl -sfL -o "$archive" "$url"; then
+        error "${NAME}: download failed"
+        return 1
+    fi
+
+    # Checksum
+    run_checksum "$available" "$archive" || return 1
+
+    # Signature
+    run_checksig "$available" "$archive" || return 1
+
+    # Remove old install
+    if [[ -d "$INSTALL_DIR" ]]; then
+        (( FLAG_VERBOSE )) && info "${NAME}: removing old install at ${INSTALL_DIR}"
+        rm -rf "$INSTALL_DIR"
+    fi
+
+    # Extract
+    info "${NAME}: extracting to ${INSTALL_DIR}"
+    extract_archive "$archive" "$INSTALL_DIR" || return 1
+
+    # Symlinks
+    local resolved
+    resolved=$(create_symlinks "$INSTALL_DIR" "$SYMLINK_DIR" "$SYMLINKS")
+
+    # State
+    write_state "$NAME" "$available" "$INSTALL_DIR" "$resolved"
+
+    success "${NAME}: installed version ${available}"
+    return 0
+}
+
+cmd_install() {
+    if [[ -n "$TARGET_NAME" ]]; then
+        local conf_file
+        conf_file=$(find_conf_by_name "$TARGET_NAME") || {
+            error "no configuration found for package: ${TARGET_NAME}"
+            return 1
+        }
+        cmd_install_package "$conf_file" || true
+    else
+        for conf_file in "${OOB_CONF}"/*; do
+            [[ -f "$conf_file" ]] || continue
+            cmd_install_package "$conf_file" || true
+        done
+    fi
+}
+
+# --- Command: check ---
+cmd_check() {
+    local confs=()
+
+    if [[ -n "$TARGET_NAME" ]]; then
+        local conf_file
+        conf_file=$(find_conf_by_name "$TARGET_NAME") || {
+            error "no configuration found for package: ${TARGET_NAME}"
+            return 1
+        }
+        confs+=("$conf_file")
+    else
+        for f in "${OOB_CONF}"/*; do
+            [[ -f "$f" ]] && confs+=("$f")
+        done
+    fi
+
+    for conf_file in "${confs[@]}"; do
+        load_conf "$conf_file" || continue
+
+        local available
+        available=$(run_version_check "$NAME" "$VERSION_CHECK") || continue
+
+        if read_state "$NAME"; then
+            if [[ "$INSTALLED_VERSION" == "$available" ]]; then
+                info "${NAME}: installed=${INSTALLED_VERSION} available=${available} (up to date)"
+            else
+                highlight "${NAME}: installed=${INSTALLED_VERSION} available=${available}"
+            fi
+        else
+            highlight "${NAME}: not installed, available=${available}"
+        fi
+    done
+}
+
+
+# --- Command: remove ---
+cmd_remove() {
+    if [[ -z "$TARGET_NAME" ]]; then
+        error "usage: oob remove <name>"
+        return 1
+    fi
+
+    if ! read_state "$TARGET_NAME"; then
+        error "${TARGET_NAME}: not installed"
+        return 1
+    fi
+
+    if (( FLAG_DRYRUN )); then
+        info "${TARGET_NAME}: would remove ${INSTALL_PATH}"
+        [[ -n "$STATE_SYMLINKS" ]] && remove_symlinks "$STATE_SYMLINKS"
+        info "${TARGET_NAME}: would remove state file"
+        return 0
+    fi
+
+    if (( ! FLAG_FORCE )); then
+        printf "Remove %s (version %s)? [y/N] " "$TARGET_NAME" "$INSTALLED_VERSION"
+        local answer
+        read -r answer
+        case "$answer" in
+            [yY]|[yY][eE][sS]) ;;
+            *) info "aborted"; return 0 ;;
+        esac
+    fi
+
+    # Remove symlinks
+    [[ -n "$STATE_SYMLINKS" ]] && remove_symlinks "$STATE_SYMLINKS"
+
+    # Remove installed files
+    if [[ -d "$INSTALL_PATH" ]]; then
+        rm -rf "$INSTALL_PATH"
+        info "${TARGET_NAME}: removed ${INSTALL_PATH}"
+    fi
+
+    # Also remove the parent INSTALL_DIR if empty
+    local parent
+    parent=$(dirname "$INSTALL_PATH")
+    if [[ -d "$parent" ]] && [[ -z "$(ls -A "$parent" 2>/dev/null)" ]]; then
+        rmdir "$parent" 2>/dev/null || true
+    fi
+
+    # Remove state
+    rm -f "${OOB_STATE}/${TARGET_NAME}"
+
+    success "${TARGET_NAME}: removed"
+}
+
+# --- Command: list ---
+cmd_list() {
+    for conf_file in "${OOB_CONF}"/*; do
+        [[ -f "$conf_file" ]] || continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$conf_file"
+        [[ -z "$NAME" ]] && continue
+
+        if read_state "$NAME"; then
+            info "${NAME}: ${INSTALLED_VERSION}"
+        else
+            info "${NAME}: configured, not installed"
+        fi
+    done
+}
+
+# --- Command: status ---
+cmd_status() {
+    if [[ -z "$TARGET_NAME" ]]; then
+        error "usage: oob status <name>"
+        return 1
+    fi
+
+    local conf_file
+    conf_file=$(find_conf_by_name "$TARGET_NAME") || {
+        error "no configuration found for package: ${TARGET_NAME}"
+        return 1
+    }
+
+    load_conf "$conf_file" || return 1
+
+    if read_state "$NAME"; then
+        bold "${NAME}"
+        info "  version:  ${INSTALLED_VERSION}"
+        info "  date:     ${INSTALL_DATE}"
+        info "  path:     ${INSTALL_PATH}"
+        info "  symlinks: ${STATE_SYMLINKS}"
+    else
+        info "${NAME}: not installed"
+    fi
+
+    # Check for updates
+    local available
+    available=$(run_version_check "$NAME" "$VERSION_CHECK") || return 0
+
+    if [[ -n "${INSTALLED_VERSION:-}" && "$INSTALLED_VERSION" == "$available" ]]; then
+        success "${NAME}: up to date (${available})"
+    elif [[ -n "${INSTALLED_VERSION:-}" ]]; then
+        highlight "${NAME}: update available ${INSTALLED_VERSION} -> ${available}"
+    else
+        highlight "${NAME}: available version ${available}"
+    fi
+}
+
+# --- Command: init ---
+cmd_init() {
+    # Create directory structure
+    local dirs=("$OOB_CONF" "$OOB_CHECKVER" "$OOB_DLOAD" "$OOB_CHECKSUM" "$OOB_CHECKSIG" "$OOB_KEYS" "$OOB_LIVE" "$OOB_STATE" "${OOB_BASE}/bin")
+    for d in "${dirs[@]}"; do
+        if (( FLAG_DRYRUN )); then
+            [[ -d "$d" ]] || info "would create directory: ${d}"
+        else
+            if [[ ! -d "$d" ]]; then
+                mkdir -p "$d"
+                (( FLAG_VERBOSE )) && info "created directory: ${d}"
+            fi
+        fi
+    done
+
+    # Install apt hook
+    if [[ -f "$APT_HOOK" ]]; then
+        warn "apt hook already exists: ${APT_HOOK}"
+        if (( ! FLAG_FORCE )); then
+            printf "Overwrite? [y/N] "
+            local answer
+            read -r answer
+            case "$answer" in
+                [yY]|[yY][eE][sS]) ;;
+                *) info "aborted"; return 0 ;;
+            esac
+        fi
+    fi
+
+    if (( FLAG_DRYRUN )); then
+        info "would write apt hook to ${APT_HOOK}"
+        return 0
+    fi
+
+    cat > "$APT_HOOK" <<'EOF'
+# /etc/apt/apt.conf.d/99-apt-oob
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install -q; fi";};
+EOF
+
+    success "apt hook installed: ${APT_HOOK}"
+}
+
+# --- Command: deinit ---
+cmd_deinit() {
+    if [[ ! -f "$APT_HOOK" ]]; then
+        warn "apt hook not found: ${APT_HOOK}"
+        return 0
+    fi
+
+    if (( FLAG_DRYRUN )); then
+        info "would remove apt hook: ${APT_HOOK}"
+        return 0
+    fi
+
+    rm -f "$APT_HOOK"
+    success "apt hook removed: ${APT_HOOK}"
+}
+
+# --- Main ---
+main() {
+    parse_args "$@"
+    check_root
+
+    # Ensure log file exists
+    touch "$LOG_FILE" 2>/dev/null || true
+
+    case "$COMMAND" in
+        install) cmd_install ;;
+        check)   cmd_check ;;
+        remove)  cmd_remove ;;
+        list)    cmd_list ;;
+        status)  cmd_status ;;
+        init)    cmd_init ;;
+        deinit)  cmd_deinit ;;
+    esac
+}
+
+# Allow sourcing without executing (for unit tests)
+if [[ "${OOB_SOURCED:-0}" != "1" ]]; then
+    main "$@"
+fi
