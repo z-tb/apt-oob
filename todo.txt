@@ -92,6 +92,7 @@
 
 ## 17. Command: init
 - [ ] Create oob directory structure under /usr/local/apt-oob
+- [ ] Write default /etc/apt-oob.conf with commented-out values if it doesn't exist
 - [ ] Check if APT_HOOK exists — warn and prompt to overwrite
 - [ ] Write the DPkg::Post-Invoke line to APT_HOOK
 
