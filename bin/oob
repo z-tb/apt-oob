@@ -707,7 +707,7 @@ cmd_init() {
     # Write default config if it doesn't exist
     local conf="${OOB_CONF_FILE:-/etc/apt-oob.conf}"
     if [[ -f "$conf" ]]; then
-        (( FLAG_VERBOSE )) && info "config already exists: ${conf}"
+        info "config exists: ${conf}"
     elif (( FLAG_DRYRUN )); then
         info "would write default config to ${conf}"
     else
