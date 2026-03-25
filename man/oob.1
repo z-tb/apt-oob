@@ -144,7 +144,18 @@ in
 .IR /etc/apt\-oob.conf .
 .TP
 .I /etc/apt/apt.conf.d/99\-apt\-oob
-APT post-invoke hook file. Written by
+APT hook file. Contains two hooks:
+.B APT::Update::Post\-Invoke\-Success
+runs
+.B oob check
+after
+.BR "apt update" ;
+.B DPkg::Post\-Invoke
+runs
+.B oob install
+after
+.BR "apt upgrade" " or " "apt full\-upgrade" .
+Written by
 .BR "oob init" ,
 removed by
 .BR "oob deinit" .
