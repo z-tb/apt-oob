@@ -1,0 +1,224 @@
+.TH OOB 1 "March 2026" "apt-oob 0.1.0" "User Commands"
+.SH NAME
+oob \- out-of-band software manager for Debian-based systems
+.SH SYNOPSIS
+.B oob
+.I command
+.RI [ name ]
+.RI [ flags ]
+.SH DESCRIPTION
+.B oob
+manages software that has no apt repository \(em packages distributed as
+tarballs with a download URL \(em handling version checking, verification,
+installation, and symlinking.
+.PP
+It integrates with the standard apt upgrade process via a DPkg::Post\-Invoke
+hook and runs automatically after
+.BR apt\ upgrade (8)
+or
+.BR apt\-get\ upgrade (8).
+.SH COMMANDS
+.TP
+.BI install " [name]"
+Install or update all configured packages, or a single package by
+.IR name .
+Downloads the archive to a temporary directory, verifies checksum and
+signature if configured, removes the old install directory, extracts,
+creates symlinks, and writes the state file.
+Per-package failures are logged and skipped; remaining packages still
+get a chance to update.
+.TP
+.BI check " [name]"
+Check available versions without downloading or installing.
+Prints installed and available versions for each package.
+.TP
+.BI remove " name"
+Remove installed files from
+.IR live/ ,
+symlinks, and the state file for a package.
+Prompts y/n before proceeding unless
+.B \-\-force
+is specified.
+.TP
+.B list
+List all configured packages and their installed versions.
+Packages with a conf.d entry but no state file are shown as
+"configured, not installed".
+.TP
+.BI status " name"
+Show the state file contents for a package and run the version check
+script to report whether an update is available.
+.TP
+.B init
+Create the directory structure under
+.IR OOB_BASE ,
+write a default
+.I /etc/apt\-oob.conf
+if it does not exist, and install the apt post\-invoke hook at
+.IR /etc/apt/apt.conf.d/99\-apt\-oob .
+Warns and prompts if the hook already exists.
+.TP
+.B deinit
+Remove the apt post\-invoke hook file.
+.SH OPTIONS
+.TP
+.BR \-f ", " \-\-force
+For
+.BR install :
+re-download and reinstall regardless of installed version.
+For
+.BR remove :
+skip the y/n confirmation prompt.
+.TP
+.BR \-n ", " \-\-dry\-run
+Show what would happen without making any changes.
+.TP
+.BR \-v ", " \-\-verbose
+Increase terminal output detail.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress terminal output; write to log file only.
+.TP
+.BR \-h ", " \-\-help
+Show usage summary and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH FILES
+.TP
+.I /etc/apt\-oob.conf
+Global configuration file. Shell-sourceable key=value format.
+Sourced at startup before paths are derived. Created by
+.B oob init
+with commented-out defaults if it does not exist.
+.TP
+.I /usr/local/apt\-oob/
+Default root directory for all apt-oob files. Overridable via
+.B OOB_BASE
+in
+.IR /etc/apt\-oob.conf .
+.TP
+.I /usr/local/apt\-oob/conf.d/
+Package configuration files. Sourced in lexical order; numeric prefixes
+.RI ( 10\- ", " 20\- )
+control precedence. Each file configures one package.
+.TP
+.I /usr/local/apt\-oob/checkver/
+Version check scripts. Must print a single version string to stdout
+and exit 0 on success.
+.TP
+.I /usr/local/apt\-oob/dload/
+Download URL resolution scripts. Receive version as $1, print URL to stdout.
+.TP
+.I /usr/local/apt\-oob/checksum/
+Checksum scripts. Receive version as $1, print
+.I algo:hash
+to stdout (e.g.
+.IR sha256:abc123... ).
+.TP
+.I /usr/local/apt\-oob/checksig/
+Signature verification scripts. Receive version as $1 and archive path as $2.
+Must exit 0 on success.
+.TP
+.I /usr/local/apt\-oob/keys/
+ASCII-armored GPG public key files (.asc) used by checksig scripts.
+.TP
+.I /usr/local/apt\-oob/live/
+Extracted package installations.
+.TP
+.I /usr/local/apt\-oob/state/
+Installed package state files. One file per package.
+.TP
+.I /var/log/apt\-oob.log
+Log file. Syslog-style format. Overridable via
+.B LOG_FILE
+in
+.IR /etc/apt\-oob.conf .
+.TP
+.I /etc/apt/apt.conf.d/99\-apt\-oob
+APT post-invoke hook file. Written by
+.BR "oob init" ,
+removed by
+.BR "oob deinit" .
+.SH CONFIGURATION
+Package configuration files under
+.I conf.d/
+are shell-sourceable key=value files with the following fields:
+.TP
+.B NAME
+Package name. Used for directory naming under live/ and state/.
+.TP
+.B DOWNLOAD
+Download source. Either an https:// URL supporting template variables
+.RI ( {VERSION} ", " {MAJOR} ", " {MINOR} ", " {REVISION} )
+or a script name resolved under dload/.
+.TP
+.B CHECKSUM
+Either
+.I none
+to skip checksum verification, or a script name under checksum/.
+If omitted entirely, a warning is logged and verification is skipped.
+.TP
+.B CHECKSIG
+Either
+.I none
+to skip signature verification, or a script name under checksig/.
+If omitted entirely, a warning is logged and verification is skipped.
+If both CHECKSUM and CHECKSIG are set, both must pass.
+.TP
+.B VERSION_CHECK
+Version check script name under checkver/.
+.TP
+.B INSTALL_DIR
+Base directory to extract the archive into. Typically
+.IR ${OOB_LIVE}/${NAME} .
+.TP
+.B SYMLINKS
+Space-separated list of symlinks in
+.I linkname:relative_path
+format.
+.TP
+.B SYMLINK_DIR
+Directory in which symlinks are created.
+.SH EXIT STATUS
+.B oob
+exits 0 on success. Per-package failures during
+.B install
+are handled internally and do not cause a non-zero exit unless a fatal
+error occurs. This avoids false post-invoke failures reported by apt.
+.SH EXAMPLES
+Install all configured packages:
+.PP
+.RS
+.B oob install
+.RE
+.PP
+Check for updates without installing:
+.PP
+.RS
+.B oob check
+.RE
+.PP
+Force reinstall a single package:
+.PP
+.RS
+.B oob install golang \-f
+.RE
+.PP
+Remove a package:
+.PP
+.RS
+.B oob remove firefox
+.RE
+.PP
+Set up the apt hook:
+.PP
+.RS
+.B oob init
+.RE
+.SH SEE ALSO
+.BR apt (8),
+.BR apt\-get (8),
+.BR dpkg (1)
+.SH AUTHOR
+apt-oob contributors.

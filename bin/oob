@@ -23,13 +23,15 @@ FLAG_DRYRUN=0
 FLAG_VERBOSE=0
 FLAG_QUIET=0
 
+OOB_VERSION="0.1.0"
+
 # --- Output functions ---
 _log() {
     local level="$1"; shift
     local msg="$*"
     local ts
     ts=$(date '+%b %d %H:%M:%S')
-    echo "${ts} oob[$$]: [${level}] ${msg}" >> "$LOG_FILE"
+    echo "${ts} oob[$$]: [${level}] ${msg}" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 info() {
@@ -89,6 +91,7 @@ flags:
   -v, --verbose      Increase terminal output detail
   -q, --quiet        Suppress terminal output; log to file only
   -h, --help         Show this help message
+  -V, --version      Show version
 HELP
 }
 
@@ -104,6 +107,7 @@ parse_args() {
             -v|--verbose) FLAG_VERBOSE=1 ;;
             -q|--quiet)   FLAG_QUIET=1 ;;
             -h|--help)    show_help; exit 0 ;;
+            --version|-V) echo "oob ${OOB_VERSION}"; exit 0 ;;
             install|check|remove|list|status|init|deinit)
                 COMMAND="$1"
                 ;;
@@ -666,6 +670,28 @@ cmd_init() {
             fi
         fi
     done
+
+    # Write default config if it doesn't exist
+    local conf="${OOB_CONF_FILE:-/etc/apt-oob.conf}"
+    if [[ -f "$conf" ]]; then
+        (( FLAG_VERBOSE )) && info "config already exists: ${conf}"
+    elif (( FLAG_DRYRUN )); then
+        info "would write default config to ${conf}"
+    else
+        cat > "$conf" <<'CONF'
+# /etc/apt-oob.conf — global configuration for apt-oob
+#
+# All values below show the built-in defaults. Uncomment and modify to override.
+
+# Root directory for all apt-oob files (conf.d, checkver, dload, checksum,
+# checksig, keys, live, state). All subdirectory paths are derived from this.
+#OOB_BASE="/usr/local/apt-oob"
+
+# Log file path. All oob output is appended here in syslog format.
+#LOG_FILE="/var/log/apt-oob.log"
+CONF
+        success "wrote default config: ${conf}"
+    fi
 
     # Install apt hook
     if [[ -f "$APT_HOOK" ]]; then

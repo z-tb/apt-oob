@@ -147,12 +147,19 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 
 ## Global Configuration
 
-`/etc/apt-oob.conf` is an optional shell-sourceable configuration file for overriding oob defaults. It is sourced at startup before paths are derived. If the file does not exist, built-in defaults are used.
+`/etc/apt-oob.conf` is a shell-sourceable configuration file for overriding oob defaults. It is sourced at startup before paths are derived. `oob init` writes a default version with all values commented out if the file does not already exist.
 
 ```sh
-# /etc/apt-oob.conf
-OOB_BASE="/usr/local/apt-oob"
-LOG_FILE="/var/log/apt-oob.log"
+# /etc/apt-oob.conf — global configuration for apt-oob
+#
+# All values below show the built-in defaults. Uncomment and modify to override.
+
+# Root directory for all apt-oob files (conf.d, checkver, dload, checksum,
+# checksig, keys, live, state). All subdirectory paths are derived from this.
+#OOB_BASE="/usr/local/apt-oob"
+
+# Log file path. All oob output is appended here in syslog format.
+#LOG_FILE="/var/log/apt-oob.log"
 ```
 
 | Variable | Default | Description |

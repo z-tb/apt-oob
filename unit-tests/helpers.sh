@@ -27,6 +27,7 @@ setup() {
 
     # Override APT_HOOK to test path
     APT_HOOK="$TEST_TMPDIR/99-apt-oob"
+    export OOB_CONF_FILE="$TEST_TMPDIR/apt-oob.conf"
 
     # Reset flags
     FLAG_FORCE=0; FLAG_DRYRUN=0; FLAG_VERBOSE=0; FLAG_QUIET=1
