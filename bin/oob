@@ -671,6 +671,18 @@ cmd_init() {
         fi
     done
 
+    # Copy oob executable into place
+    local self_path
+    self_path="$(readlink -f "${BASH_SOURCE[0]}")"
+    local dest="${OOB_BASE}/bin/oob"
+    if (( FLAG_DRYRUN )); then
+        info "would install ${self_path} to ${dest}"
+    else
+        cp "$self_path" "$dest"
+        chmod +x "$dest"
+        success "installed oob to ${dest}"
+    fi
+
     # Write default config if it doesn't exist
     local conf="${OOB_CONF_FILE:-/etc/apt-oob.conf}"
     if [[ -f "$conf" ]]; then
@@ -691,6 +703,44 @@ cmd_init() {
 #LOG_FILE="/var/log/apt-oob.log"
 CONF
         success "wrote default config: ${conf}"
+    fi
+
+    # Install example firefox config if conf.d is empty
+    if [[ -z "$(ls -A "$OOB_CONF" 2>/dev/null)" ]]; then
+        if (( FLAG_DRYRUN )); then
+            info "would write example firefox config to ${OOB_CONF}/10-firefox"
+        else
+            cat > "${OOB_CONF}/10-firefox" <<'CONF'
+NAME="firefox"
+DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/{VERSION}/linux-x86_64/en-US/firefox-{VERSION}.tar.xz"
+CHECKSUM="firefox-verify.sh"
+CHECKSIG="none"
+VERSION_CHECK="firefox-check.sh"
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+SYMLINKS="firefox:firefox/firefox"
+SYMLINK_DIR="/usr/local/bin"
+CONF
+
+            cat > "${OOB_CHECKVER}/firefox-check.sh" <<'SCRIPT'
+#!/bin/bash
+curl -sf 'https://product-details.mozilla.org/1.0/firefox_versions.json' \
+  | grep -oP '"LATEST_FIREFOX_VERSION"\s*:\s*"\K[^"]+'
+SCRIPT
+            chmod +x "${OOB_CHECKVER}/firefox-check.sh"
+
+            cat > "${OOB_CHECKSUM}/firefox-verify.sh" <<'SCRIPT'
+#!/bin/bash
+VERSION="$1"
+[ -z "$VERSION" ] && exit 1
+URL="https://download-installer.cdn.mozilla.net/pub/firefox/releases/${VERSION}/SHA512SUMS"
+HASH=$(curl -sf "$URL" | grep "linux-x86_64/en-US/firefox-${VERSION}.tar.xz" | awk '{print $1}')
+[ -z "$HASH" ] && exit 1
+echo "sha512:${HASH}"
+SCRIPT
+            chmod +x "${OOB_CHECKSUM}/firefox-verify.sh"
+
+            success "wrote example firefox config to ${OOB_CONF}/10-firefox"
+        fi
     fi
 
     # Install apt hook
