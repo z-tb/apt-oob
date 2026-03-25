@@ -98,6 +98,14 @@ Default root directory for all apt-oob files. Overridable via
 in
 .IR /etc/apt\-oob.conf .
 .TP
+.B BANNER
+Startup banner style. Set in
+.IR /etc/apt\-oob.conf .
+Values:
+.BR fancy " (default) \(em DOS-style shaded box,"
+.BR simple " \(em single line,"
+.BR none " \(em no banner."
+.TP
 .I /usr/local/apt\-oob/conf.d/
 Package configuration files. Sourced in lexical order; numeric prefixes
 .RI ( 10\- ", " 20\- )

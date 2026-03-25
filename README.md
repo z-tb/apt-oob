@@ -166,6 +166,7 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 |---|---|---|
 | `OOB_BASE` | `/usr/local/apt-oob` | Root directory for all apt-oob files |
 | `LOG_FILE` | `/var/log/apt-oob.log` | Log file path |
+| `BANNER` | `fancy` | Startup banner style: `fancy`, `simple`, or `none` |
 
 ---
 

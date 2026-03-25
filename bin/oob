@@ -25,6 +25,9 @@ FLAG_QUIET=0
 
 OOB_VERSION="0.1.0"
 
+# Banner style: none, simple, fancy (default: fancy)
+: "${BANNER:="fancy"}"
+
 # --- Output functions ---
 _log() {
     local level="$1"; shift
@@ -72,6 +75,24 @@ check_root() {
 }
 
 # --- Help ---
+show_banner() {
+    (( FLAG_QUIET )) && return
+    case "$BANNER" in
+        fancy)
+            printf '\033[0;36m'
+            echo '┌──────────────────┐'
+            echo "│  apt-oob v${OOB_VERSION}  │░"
+            echo '└──────────────────┘░'
+            echo '  ░░░░░░░░░░░░░░░░░░░'
+            printf '\033[0m\n'
+            ;;
+        simple)
+            printf '\033[0;36mapt-oob - v%s\033[0m\n' "$OOB_VERSION"
+            ;;
+        none) ;;
+    esac
+}
+
 show_help() {
     cat <<'HELP'
 usage: oob <command> [name] [flags]
@@ -701,6 +722,9 @@ cmd_init() {
 
 # Log file path. All oob output is appended here in syslog format.
 #LOG_FILE="/var/log/apt-oob.log"
+
+# Banner style displayed on startup: fancy, simple, or none.
+#BANNER="fancy"
 CONF
         success "wrote default config: ${conf}"
     fi
@@ -790,6 +814,7 @@ cmd_deinit() {
 main() {
     parse_args "$@"
     check_root
+    show_banner
 
     # Ensure log file exists
     touch "$LOG_FILE" 2>/dev/null || true
