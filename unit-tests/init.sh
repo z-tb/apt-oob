@@ -12,7 +12,6 @@ assert_dir_exists "$OOB_STATE" "state created"
 assert_dir_exists "$OOB_CHECKVER" "checkver created"
 assert_dir_exists "$OOB_DLOAD" "dload created"
 assert_dir_exists "$OOB_CHECKSUM" "checksum created"
-assert_dir_exists "$OOB_CHECKSIG" "checksig created"
 assert_dir_exists "$OOB_KEYS" "keys created"
 
 # Hook content

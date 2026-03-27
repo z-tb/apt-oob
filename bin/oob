@@ -12,7 +12,6 @@ OOB_CONF="${OOB_BASE}/conf.d"
 OOB_CHECKVER="${OOB_BASE}/checkver"
 OOB_DLOAD="${OOB_BASE}/dload"
 OOB_CHECKSUM="${OOB_BASE}/checksum"
-OOB_CHECKSIG="${OOB_BASE}/checksig"
 OOB_KEYS="${OOB_BASE}/keys"
 OOB_LIVE="${OOB_BASE}/live"
 OOB_STATE="${OOB_BASE}/state"
@@ -158,7 +157,8 @@ _reset_conf() {
     NAME=""
     DOWNLOAD=""
     unset CHECKSUM
-    unset CHECKSIG
+    unset GPG_KEY
+    unset GPG_SIG_URL
     VERSION_CHECK=""
     INSTALL_DIR=""
     SYMLINKS=""
@@ -184,14 +184,16 @@ load_conf() {
         return 1
     fi
 
-    # Warn on omitted (not "none") CHECKSUM/CHECKSIG
+    # Warn on omitted (not "none") CHECKSUM
     if [[ -z "${CHECKSUM+x}" ]]; then
         warn "${NAME}: CHECKSUM not set, intent unclear — skipping checksum verification"
         CHECKSUM="none"
     fi
-    if [[ -z "${CHECKSIG+x}" ]]; then
-        warn "${NAME}: CHECKSIG not set, intent unclear — skipping signature verification"
-        CHECKSIG="none"
+    # Warn on omitted GPG_KEY (only in verbose mode)
+    if [[ -z "${GPG_KEY+x}" ]]; then
+        _log "WARN" "${NAME}: GPG_KEY not set — skipping GPG signature verification"
+        (( FLAG_VERBOSE )) && warn "${NAME}: GPG_KEY not set — skipping GPG signature verification"
+        GPG_KEY=""
     fi
 
     return 0
@@ -314,27 +316,75 @@ run_checksum() {
     return 0
 }
 
-# --- Helper: signature verification ---
-run_checksig() {
+# --- Helper: GPG signature verification ---
+run_gpg_verify() {
     local version="$1"
     local archive="$2"
 
-    if [[ "$CHECKSIG" == "none" ]]; then
+    if [[ -z "$GPG_KEY" ]]; then
         return 0
     fi
 
-    local script="${OOB_CHECKSIG}/${CHECKSIG}"
-    if [[ ! -x "$script" ]]; then
-        error "${NAME}: checksig script not found or not executable: ${script}"
+    local keyfile="${OOB_KEYS}/${GPG_KEY}"
+    if [[ ! -f "$keyfile" ]]; then
+        error "${NAME}: GPG key not found: ${keyfile}"
         return 1
     fi
 
-    "$script" "$version" "$archive" || {
-        error "${NAME}: signature verification failed"
+    if [[ -z "${GPG_SIG_URL+x}" || -z "$GPG_SIG_URL" ]]; then
+        error "${NAME}: GPG_KEY is set but GPG_SIG_URL is not defined"
+        return 1
+    fi
+
+    local sig_url
+    sig_url=$(expand_template "$version" "$GPG_SIG_URL")
+
+    # Derive the signed file URL by stripping the signature extension (.asc or .sig)
+    local signed_url="${sig_url%.asc}"
+    [[ "$signed_url" == "$sig_url" ]] && signed_url="${sig_url%.sig}"
+
+    local tmpdir
+    tmpdir=$(mktemp -d "/tmp/oob-gpg.XXXXXX")
+    local sigfile="${tmpdir}/signature.asc"
+    local signedfile="${tmpdir}/signed_data"
+    local keyring="${tmpdir}/keyring.gpg"
+
+    # Download signature
+    if ! curl -sfL -o "$sigfile" "$sig_url"; then
+        rm -rf "$tmpdir"
+        error "${NAME}: failed to download GPG signature from ${sig_url}"
+        return 1
+    fi
+
+    # Download the signed file (e.g. SHA512SUMS)
+    if [[ "$signed_url" != "$sig_url" ]]; then
+        if ! curl -sfL -o "$signedfile" "$signed_url"; then
+            rm -rf "$tmpdir"
+            error "${NAME}: failed to download signed file from ${signed_url}"
+            return 1
+        fi
+    else
+        # If we can't derive a signed file URL, verify against the archive directly
+        signedfile="$archive"
+    fi
+
+    # Import key into temporary keyring and verify
+    gpg --batch --no-default-keyring --keyring "$keyring" --import "$keyfile" 2>/dev/null || {
+        rm -rf "$tmpdir"
+        error "${NAME}: failed to import GPG key: ${keyfile}"
         return 1
     }
 
-    (( FLAG_VERBOSE )) && info "${NAME}: signature verified"
+    gpg --batch --no-default-keyring --keyring "$keyring" --verify "$sigfile" "$signedfile" 2>/dev/null
+    local rc=$?
+    rm -rf "$tmpdir"
+
+    if [[ $rc -ne 0 ]]; then
+        error "${NAME}: GPG signature verification failed"
+        return 1
+    fi
+
+    (( FLAG_VERBOSE )) && info "${NAME}: GPG signature verified"
     return 0
 }
 
@@ -469,7 +519,7 @@ cmd_install_package() {
         info "${NAME}: would install version ${available}"
         info "${NAME}: would download from $(resolve_download_url "$available" "$DOWNLOAD")"
         [[ "$CHECKSUM" != "none" ]] && info "${NAME}: would verify checksum via ${CHECKSUM}"
-        [[ "$CHECKSIG" != "none" ]] && info "${NAME}: would verify signature via ${CHECKSIG}"
+        [[ -n "$GPG_KEY" ]] && info "${NAME}: would verify GPG signature via ${GPG_KEY}"
         info "${NAME}: would extract to ${INSTALL_DIR}"
         create_symlinks "$INSTALL_DIR" "$SYMLINK_DIR" "$SYMLINKS" > /dev/null
         return 0
@@ -498,7 +548,7 @@ cmd_install_package() {
     run_checksum "$available" "$archive" || return 1
 
     # Signature
-    run_checksig "$available" "$archive" || return 1
+    run_gpg_verify "$available" "$archive" || return 1
 
     # Remove old install
     if [[ -d "$INSTALL_DIR" ]]; then
@@ -682,7 +732,7 @@ cmd_status() {
 # --- Command: init ---
 cmd_init() {
     # Create directory structure
-    local dirs=("$OOB_CONF" "$OOB_CHECKVER" "$OOB_DLOAD" "$OOB_CHECKSUM" "$OOB_CHECKSIG" "$OOB_KEYS" "$OOB_LIVE" "$OOB_STATE" "${OOB_BASE}/bin")
+    local dirs=("$OOB_CONF" "$OOB_CHECKVER" "$OOB_DLOAD" "$OOB_CHECKSUM" "$OOB_KEYS" "$OOB_LIVE" "$OOB_STATE" "${OOB_BASE}/bin")
     for d in "${dirs[@]}"; do
         if (( FLAG_DRYRUN )); then
             [[ -d "$d" ]] || info "would create directory: ${d}"
@@ -721,7 +771,7 @@ cmd_init() {
 # All values below show the built-in defaults. Uncomment and modify to override.
 
 # Root directory for all apt-oob files (conf.d, checkver, dload, checksum,
-# checksig, keys, live, state). All subdirectory paths are derived from this.
+# keys, live, state). All subdirectory paths are derived from this.
 #OOB_BASE="/usr/local/apt-oob"
 
 # Log file path. All oob output is appended here in syslog format.
@@ -742,7 +792,6 @@ CONF
 NAME="firefox"
 DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/{VERSION}/linux-x86_64/en-US/firefox-{VERSION}.tar.xz"
 CHECKSUM="firefox-verify.sh"
-CHECKSIG="none"
 VERSION_CHECK="firefox-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="firefox:firefox/firefox"

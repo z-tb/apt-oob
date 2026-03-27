@@ -16,7 +16,7 @@ setup() {
     export LOG_FILE="$TEST_TMPDIR/oob.log"
     export OOB_SOURCED=1
 
-    mkdir -p "$OOB_BASE"/{conf.d,checkver,dload,checksum,checksig,keys,live,state,bin}
+    mkdir -p "$OOB_BASE"/{conf.d,checkver,dload,checksum,keys,live,state,bin}
 
     # Source oob functions (OOB_BASE/LOG_FILE already exported, so defaults won't override)
     source "$REPO_DIR/bin/oob"
@@ -137,7 +137,6 @@ create_test_conf() {
 NAME="${name}"
 DOWNLOAD="https://example.com/${name}/{VERSION}.tar.gz"
 CHECKSUM="none"
-CHECKSIG="none"
 VERSION_CHECK="${name}-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${name}"
 SYMLINKS="${name}:${name}/bin/${name}"

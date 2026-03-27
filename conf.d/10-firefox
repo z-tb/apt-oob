@@ -1,6 +1,8 @@
 NAME="firefox"
 DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/{VERSION}/linux-x86_64/en-US/firefox-{VERSION}.tar.xz"
 CHECKSUM="firefox-verify.sh"
+GPG_KEY="firefox.gpg"
+GPG_SIG_URL="https://releases.mozilla.org/pub/firefox/releases/{VERSION}/SHA512SUMS.asc"
 VERSION_CHECK="firefox-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="firefox:firefox/firefox"

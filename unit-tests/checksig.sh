@@ -5,35 +5,23 @@ setup
 NAME="testpkg"
 echo "test" > "${TEST_TMPDIR}/archive.tar.gz"
 
-# pass
-cat > "${OOB_CHECKSIG}/pass.sh" <<'EOF'
-#!/bin/bash
-exit 0
-EOF
-chmod +x "${OOB_CHECKSIG}/pass.sh"
-CHECKSIG="pass.sh"
-run_checksig "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
-assert_ok $? "checksig pass"
+# No GPG_KEY — skip silently
+GPG_KEY=""
+run_gpg_verify "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
+assert_ok $? "empty GPG_KEY skips"
 
-# fail
-cat > "${OOB_CHECKSIG}/fail.sh" <<'EOF'
-#!/bin/bash
-exit 1
-EOF
-chmod +x "${OOB_CHECKSIG}/fail.sh"
-CHECKSIG="fail.sh"
-run_checksig "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
-assert_fail $? "checksig fail"
+# GPG_KEY set but key file missing
+GPG_KEY="missing.gpg"
+GPG_SIG_URL="https://example.com/sig.asc"
+run_gpg_verify "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
+assert_fail $? "missing key file fails"
 
-# script not found
-CHECKSIG="nonexistent.sh"
-run_checksig "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
-assert_fail $? "script not found"
-
-# none skips
-CHECKSIG="none"
-run_checksig "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
-assert_ok $? "none skips"
+# GPG_KEY set but no GPG_SIG_URL
+GPG_KEY="test.gpg"
+touch "${OOB_KEYS}/test.gpg"
+unset GPG_SIG_URL
+run_gpg_verify "1.0.0" "${TEST_TMPDIR}/archive.tar.gz" 2>/dev/null
+assert_fail $? "missing GPG_SIG_URL fails"
 
 teardown
 report "checksig"

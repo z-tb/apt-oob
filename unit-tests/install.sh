@@ -19,7 +19,6 @@ cat > "${OOB_CONF}/10-testpkg" <<EOF
 NAME="testpkg"
 DOWNLOAD="testpkg-download.sh"
 CHECKSUM="none"
-CHECKSIG="none"
 VERSION_CHECK="testpkg-check.sh"
 INSTALL_DIR="${OOB_LIVE}/testpkg"
 SYMLINKS="testpkg:testpkg/bin/testpkg"

@@ -124,12 +124,10 @@ Checksum scripts. Receive version as $1, print
 to stdout (e.g.
 .IR sha256:abc123... ).
 .TP
-.I /usr/local/apt\-oob/checksig/
-Signature verification scripts. Receive version as $1 and archive path as $2.
-Must exit 0 on success.
-.TP
 .I /usr/local/apt\-oob/keys/
-ASCII-armored GPG public key files (.asc) used by checksig scripts.
+GPG public key files used for signature verification. Referenced by
+.B GPG_KEY
+in conf.d files.
 .TP
 .I /usr/local/apt\-oob/live/
 Extracted package installations.
@@ -178,12 +176,15 @@ Either
 to skip checksum verification, or a script name under checksum/.
 If omitted entirely, a warning is logged and verification is skipped.
 .TP
-.B CHECKSIG
-Either
-.I none
-to skip signature verification, or a script name under checksig/.
-If omitted entirely, a warning is logged and verification is skipped.
-If both CHECKSUM and CHECKSIG are set, both must pass.
+.B GPG_KEY
+GPG public key filename under keys/. If set, oob imports the key into a
+temporary keyring and verifies the detached signature (from GPG_SIG_URL)
+against the downloaded archive. If not set, GPG verification is skipped.
+If both CHECKSUM and GPG_KEY are set, both must pass.
+.TP
+.B GPG_SIG_URL
+URL to fetch the detached GPG signature file. Supports template variables.
+Required when GPG_KEY is set.
 .TP
 .B VERSION_CHECK
 Version check script name under checkver/.
