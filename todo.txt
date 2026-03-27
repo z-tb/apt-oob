@@ -3,7 +3,7 @@
 - [ ] Source /etc/apt-oob.conf if it exists (before deriving paths)
 - [ ] OOB_BASE="/usr/local/apt-oob" (overridable via apt-oob.conf)
 - [ ] LOG_FILE="/var/log/apt-oob.log" (overridable via apt-oob.conf)
-- [ ] Derived paths: OOB_CONF, OOB_CHECKVER, OOB_DLOAD, OOB_CHECKSUM, OOB_CHECKSIG, OOB_KEYS, OOB_LIVE, OOB_STATE
+- [ ] Derived paths: OOB_CONF, OOB_CHECKVER, OOB_DLOAD, OOB_CHECKSUM, OOB_KEYS, OOB_LIVE, OOB_STATE
 - [ ] APT_HOOK="/etc/apt/apt.conf.d/99-apt-oob"
 - [ ] Root check — exit 1 if EUID != 0
 
@@ -26,7 +26,7 @@
 ## 4. Helper: conf.d loader
 - [ ] load_conf() — source a conf.d file, validate required fields (NAME, DOWNLOAD, VERSION_CHECK, INSTALL_DIR, SYMLINKS, SYMLINK_DIR)
 - [ ] Warn if CHECKSUM is unset (not "none", just missing)
-- [ ] Warn if CHECKSIG is unset (not "none", just missing)
+- [ ] Warn if GPG_KEY is unset (log only, print with -v)
 - [ ] Reset conf variables between packages to avoid bleed
 
 ## 5. Helper: template variable substitution
@@ -48,9 +48,12 @@
 - [ ] Compute matching hash (sha256sum or sha512sum) on downloaded file
 - [ ] Compare, return 0/1
 
-## 9. Helper: signature verification
-- [ ] run_checksig() — run script from OOB_CHECKSIG with version as $1, archive path as $2
-- [ ] Script handles everything internally, oob just checks exit code
+## 9. Helper: GPG signature verification
+- [ ] run_gpg_verify() — if GPG_KEY is set, import key from OOB_KEYS into temp keyring
+- [ ] Download detached signature from GPG_SIG_URL (expand template variables)
+- [ ] Verify signature against downloaded archive
+- [ ] Error if GPG_KEY set but key file missing or GPG_SIG_URL not defined
+- [ ] Skip silently if GPG_KEY not set (log warning, print only with -v)
 
 ## 10. Helper: symlink management
 - [ ] create_symlinks() — iterate SYMLINKS, create links in SYMLINK_DIR pointing to INSTALL_DIR/relative_path
@@ -65,7 +68,7 @@
 - [ ] If name given, process single conf.d entry matching NAME
 - [ ] If no name, iterate all conf.d/* in lexical order
 - [ ] Per package: load conf, run version check, compare to state, skip if current (unless --force)
-- [ ] Download to mktemp -d, run checksum, run checksig, remove old INSTALL_DIR, extract, create symlinks, write state
+- [ ] Download to mktemp -d, run checksum, run gpg verify, remove old INSTALL_DIR, extract, create symlinks, write state
 - [ ] Cleanup temp dir in trap on both success and failure
 - [ ] --dry-run: show steps without executing
 - [ ] On per-package failure: log error, continue to next package
@@ -104,12 +107,12 @@
 - [ ] helpers.sh — shared setup/teardown, temp OOB_BASE, source oob functions
 - [ ] run.sh — test runner, executes all test files, reports pass/fail summary
 - [ ] expand_template.sh — 3-component, 2-component, empty revision
-- [ ] conf_loader.sh — valid conf, missing fields, omitted CHECKSUM/CHECKSIG warnings
+- [ ] conf_loader.sh — valid conf, missing fields, omitted CHECKSUM/GPG_KEY warnings
 - [ ] state.sh — write_state atomic mv, read_state, missing state file
 - [ ] symlinks.sh — create_symlinks, remove_symlinks, resolved paths
 - [ ] extract_archive.sh — tar.gz, tar.xz, tar.bz2, zip, unsupported format
 - [ ] checksum.sh — sha256 match, sha512 match, mismatch, bad algo, script not found
-- [ ] checksig.sh — pass, fail, script not found, "none" skip
+- [ ] checksig.sh — GPG_KEY missing file, missing GPG_SIG_URL, empty GPG_KEY skips
 - [ ] init.sh — creates directory structure, writes apt hook, warns on existing
 - [ ] deinit.sh — removes hook, warns if missing
 - [ ] install.sh — new install, skip current version, --force reinstall, --dry-run

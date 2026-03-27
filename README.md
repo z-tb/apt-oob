@@ -37,7 +37,7 @@ oob deinit             # Remove the apt post-invoke hook
 2. If the installed version (from state/) already matches, a message is logged and the package is skipped. With `--force`, this check is skipped and the package is reinstalled.
 3. The archive is downloaded to a temporary directory (created via `mktemp -d`).
 4. If `CHECKSUM` is set to a script name, the checksum script runs and `oob` verifies the download. If `CHECKSUM` is omitted (not set at all), a warning is logged about unclear intent but processing continues as if `"none"`. If explicitly set to `"none"`, no warning.
-5. If `CHECKSIG` is set to a script name, the signature verification script runs. Same omission/warning behavior as `CHECKSUM`.
+5. If `GPG_KEY` and `GPG_SIG_URL` are set, the detached GPG signature is downloaded and verified against the archive using the key from `keys/`. If `GPG_KEY` is not set, a warning is logged (only printed with `-v`).
 6. The existing `INSTALL_DIR` for the package is removed, the archive is extracted, symlinks are created, and the state file is written.
 7. The temporary directory is cleaned up on both success and failure.
 
@@ -133,10 +133,8 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 ├── checksum/                # Checksum scripts (print algo:hash to stdout)
 │   ├── golang-checksum.sh
 │   └── firefox-verify.sh
-├── checksig/                # Signature verification scripts (verify GPG signatures)
-│   └── golang-sigcheck.sh
-├── keys/                    # GPG public keys (.asc files) used by checksig scripts
-│   └── golang-signing.asc
+├── keys/                    # GPG public keys used for signature verification
+│   └── golang-signing.gpg
 ├── live/                    # Extracted package installations
 │   └── golang/
 │       └── go/              # Extracted as-is from tarball, no renaming
@@ -158,11 +156,13 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 # All values below show the built-in defaults. Uncomment and modify to override.
 
 # Root directory for all apt-oob files (conf.d, checkver, dload, checksum,
-# checksig, keys, live, state). All subdirectory paths are derived from this.
+# keys, live, state). All subdirectory paths are derived from this.
 #OOB_BASE="/usr/local/apt-oob"
 
 # Log file path. All oob output is appended here in syslog format.
 #LOG_FILE="/var/log/apt-oob.log"
+
+#BANNER="fancy"
 ```
 
 | Variable | Default | Description |
@@ -179,7 +179,7 @@ Configuration files are plain shell-sourceable key=value files. They are loaded 
 
 ### Template Variables
 
-The following variables are available for use in `DOWNLOAD` when it contains an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
+The following variables are available for use in `DOWNLOAD` and `GPG_SIG_URL` when they contain an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
 
 | Variable | Description |
 |---|---|
@@ -211,13 +211,15 @@ DOWNLOAD="golang-download.sh"
 CHECKSUM="golang-verify.sh"
 # or: CHECKSUM="none"
 
-# Signature verification script under apt-oob/checksig/
-# Receives version as $1 and path to downloaded archive as $2
-# Responsible for fetching the detached signature and verifying against a key in apt-oob/keys/
-# Must exit 0 on success, non-zero on failure
-# If both CHECKSUM and CHECKSIG are set, both must pass
-CHECKSIG="golang-sigcheck.sh"
-# or: CHECKSIG="none"
+# GPG public key filename under apt-oob/keys/ (optional)
+# If set, oob imports the key into a temporary keyring and verifies the detached
+# signature (fetched from GPG_SIG_URL) against the downloaded archive.
+# The system GPG keyring is never touched.
+#GPG_KEY="golang-signing.gpg"
+
+# URL to fetch the detached GPG signature file (used when GPG_KEY is set)
+# Supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
+#GPG_SIG_URL="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz.asc"
 
 # Version check script under apt-oob/checkver/
 # Must print the latest available version string to stdout and exit 0 on success
@@ -291,21 +293,20 @@ Scripts placed under `checksum/` are responsible for producing the expected chec
 
 ---
 
-## checksig/ Scripts
+## GPG Signature Verification
 
-Scripts placed under `checksig/` are responsible for verifying the GPG signature of a downloaded archive. They must:
+When `GPG_KEY` and `GPG_SIG_URL` are set in a package's conf.d file, `oob` performs GPG signature verification:
 
-- Accept the version string as `$1` and the path to the downloaded archive as `$2`
-- Fetch the detached signature for the given version
-- Import the appropriate key from `apt-oob/keys/` into a temporary isolated keyring (the system keyring is never touched)
-- Verify the signature against the archive
-- Exit `0` on verification success
-- Exit non-zero on failure
+1. The key file is loaded from `apt-oob/keys/` into a temporary isolated keyring (the system keyring is never touched).
+2. The detached signature is downloaded from `GPG_SIG_URL` (template variables are expanded).
+3. The signature is verified against the downloaded archive using the imported key.
 
-If both `CHECKSUM` and `CHECKSIG` are configured for a package, both must pass for the install to proceed.
+If both `CHECKSUM` and `GPG_KEY` are configured, both must pass for the install to proceed.
+
+If `GPG_KEY` is not set, GPG verification is skipped (a warning is logged but not printed unless `-v` is specified).
 
 ---
 
 ## keys/
 
-ASCII-armored GPG public key files (`.asc`) used by `checksig/` scripts. Each script is responsible for importing the appropriate key into a temporary keyring at verify time. The system GPG keyring is never read from or written to.
+GPG public key files used for signature verification. Referenced by filename in `GPG_KEY`. `oob` imports the key into a temporary keyring at verify time. The system GPG keyring is never read from or written to.
