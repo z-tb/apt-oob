@@ -472,6 +472,32 @@ EOF
     mv "$tmp" "${OOB_STATE}/${name}"
 }
 
+# --- Helper: integrity check ---
+# Checks that state and install directory agree.
+# Sets INTEGRITY to: ok, stale_state, orphaned, not_installed
+# Must be called after load_conf and read_state.
+check_integrity() {
+    local name="$1"
+    local install_dir="$2"
+    local has_state=0
+    local has_dir=0
+
+    [[ -f "${OOB_STATE}/${name}" ]] && has_state=1
+    [[ -d "$install_dir" ]] && has_dir=1
+
+    if (( has_state && has_dir )); then
+        INTEGRITY="ok"
+    elif (( has_state && ! has_dir )); then
+        INTEGRITY="stale_state"
+        warn "${name}: state file exists but install directory is missing — stale state"
+    elif (( ! has_state && has_dir )); then
+        INTEGRITY="orphaned"
+        warn "${name}: install directory exists but no state file — orphaned install"
+    else
+        INTEGRITY="not_installed"
+    fi
+}
+
 # --- Helper: version check ---
 run_version_check() {
     local name="$1"
@@ -508,11 +534,16 @@ cmd_install_package() {
     available=$(run_version_check "$NAME" "$VERSION_CHECK") || return 1
 
     # Check if already installed at this version
-    if read_state "$NAME"; then
+    check_integrity "$NAME" "$INSTALL_DIR"
+    if [[ "$INTEGRITY" == "ok" ]]; then
+        read_state "$NAME"
         if [[ "$INSTALLED_VERSION" == "$available" ]] && (( ! FLAG_FORCE )); then
             info "${NAME}: already at version ${available}"
             return 0
         fi
+    elif [[ "$INTEGRITY" == "stale_state" ]]; then
+        # State exists but files are gone — remove stale state and proceed
+        rm -f "${OOB_STATE}/${NAME}"
     fi
 
     if (( FLAG_DRYRUN )); then
@@ -610,7 +641,15 @@ cmd_check() {
         local available
         available=$(run_version_check "$NAME" "$VERSION_CHECK") || continue
 
-        if read_state "$NAME"; then
+        check_integrity "$NAME" "$INSTALL_DIR"
+
+        if [[ "$INTEGRITY" == "stale_state" || "$INTEGRITY" == "orphaned" ]]; then
+            # Warnings already printed by check_integrity
+            :
+        fi
+
+        if [[ "$INTEGRITY" == "ok" ]]; then
+            read_state "$NAME"
             if [[ "$INSTALLED_VERSION" == "$available" ]]; then
                 info "${NAME}: installed=${INSTALLED_VERSION} available=${available} (up to date)"
             else
@@ -631,6 +670,30 @@ cmd_remove() {
     fi
 
     if ! read_state "$TARGET_NAME"; then
+        # Check for orphaned install
+        local conf_file
+        if conf_file=$(find_conf_by_name "$TARGET_NAME" 2>/dev/null); then
+            load_conf "$conf_file" || return 1
+            check_integrity "$NAME" "$INSTALL_DIR"
+            if [[ "$INTEGRITY" == "orphaned" ]]; then
+                if (( ! FLAG_FORCE )); then
+                    printf "Remove orphaned install at %s? [y/N] " "$INSTALL_DIR"
+                    local answer
+                    read -r answer
+                    case "$answer" in
+                        [yY]|[yY][eE][sS]) ;;
+                        *) info "aborted"; return 0 ;;
+                    esac
+                fi
+                if (( ! FLAG_DRYRUN )); then
+                    rm -rf "$INSTALL_DIR"
+                    success "${TARGET_NAME}: removed orphaned install"
+                else
+                    info "${TARGET_NAME}: would remove orphaned install at ${INSTALL_DIR}"
+                fi
+                return 0
+            fi
+        fi
         error "${TARGET_NAME}: not installed"
         return 1
     fi
@@ -684,9 +747,19 @@ cmd_list() {
         [[ -z "$NAME" ]] && continue
 
         if read_state "$NAME"; then
-            info "${NAME}: ${INSTALLED_VERSION}"
+            check_integrity "$NAME" "${OOB_LIVE}/${NAME}"
+            if [[ "$INTEGRITY" == "stale_state" ]]; then
+                warn "${NAME}: ${INSTALLED_VERSION} (state only — files missing)"
+            else
+                info "${NAME}: ${INSTALLED_VERSION}"
+            fi
         else
-            info "${NAME}: configured, not installed"
+            check_integrity "$NAME" "${OOB_LIVE}/${NAME}"
+            if [[ "$INTEGRITY" == "orphaned" ]]; then
+                warn "${NAME}: orphaned install (no state file)"
+            else
+                info "${NAME}: configured, not installed"
+            fi
         fi
     done
 }
@@ -706,12 +779,25 @@ cmd_status() {
 
     load_conf "$conf_file" || return 1
 
-    if read_state "$NAME"; then
+    check_integrity "$NAME" "$INSTALL_DIR"
+
+    if [[ "$INTEGRITY" == "ok" ]]; then
+        read_state "$NAME"
         bold "${NAME}"
         info "  version:  ${INSTALLED_VERSION}"
         info "  date:     ${INSTALL_DATE}"
         info "  path:     ${INSTALL_PATH}"
         info "  symlinks: ${STATE_SYMLINKS}"
+    elif [[ "$INTEGRITY" == "stale_state" ]]; then
+        read_state "$NAME"
+        bold "${NAME}"
+        warn "  version:  ${INSTALLED_VERSION} (state only — files missing)"
+        info "  date:     ${INSTALL_DATE}"
+        info "  path:     ${INSTALL_PATH}"
+    elif [[ "$INTEGRITY" == "orphaned" ]]; then
+        bold "${NAME}"
+        warn "  orphaned install (no state file)"
+        info "  path:     ${INSTALL_DIR}"
     else
         info "${NAME}: not installed"
     fi
@@ -792,6 +878,8 @@ CONF
 NAME="firefox"
 DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/{VERSION}/linux-x86_64/en-US/firefox-{VERSION}.tar.xz"
 CHECKSUM="firefox-verify.sh"
+GPG_KEY="firefox.gpg"
+GPG_SIG_URL="https://releases.mozilla.org/pub/firefox/releases/{VERSION}/SHA512SUMS.asc"
 VERSION_CHECK="firefox-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="firefox:firefox/firefox"
@@ -842,9 +930,9 @@ SCRIPT
     cat > "$APT_HOOK" <<'EOF'
 # /etc/apt/apt.conf.d/99-apt-oob
 # Check for oob updates after apt update
-APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check -q; fi";};
+APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check; fi";};
 # Install oob updates after apt upgrade/full-upgrade
-DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install -q; fi";};
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install; fi";};
 EOF
 
     success "apt hook installed: ${APT_HOOK}"
@@ -870,6 +958,12 @@ cmd_deinit() {
 main() {
     parse_args "$@"
     check_root
+
+    # Auto-quiet when stdout is not a terminal (unless -v explicitly set)
+    if [[ ! -t 1 ]] && (( ! FLAG_VERBOSE )); then
+        FLAG_QUIET=1
+    fi
+
     show_banner
 
     # Ensure log file exists

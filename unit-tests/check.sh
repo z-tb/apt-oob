@@ -5,11 +5,13 @@ setup
 # Up to date
 create_test_conf "uptodate"
 create_test_checkver "uptodate" "1.0.0"
+mkdir -p "${OOB_LIVE}/uptodate"
 write_state "uptodate" "1.0.0" "${OOB_LIVE}/uptodate" ""
 
 # Update available
 create_test_conf "outdated"
 create_test_checkver "outdated" "2.0.0"
+mkdir -p "${OOB_LIVE}/outdated"
 write_state "outdated" "1.0.0" "${OOB_LIVE}/outdated" ""
 
 # Not installed

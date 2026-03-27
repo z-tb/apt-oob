@@ -16,7 +16,7 @@ assert_dir_exists "$OOB_KEYS" "keys created"
 
 # Hook content
 hook_content=$(cat "$APT_HOOK")
-assert_contains "$hook_content" "oob install -q" "hook runs oob install"
+assert_contains "$hook_content" "oob install" "hook runs oob install"
 
 # init again warns (force to skip prompt)
 FLAG_FORCE=1
