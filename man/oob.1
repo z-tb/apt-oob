@@ -206,6 +206,14 @@ exits 0 on success. Per-package failures during
 .B install
 are handled internally and do not cause a non-zero exit unless a fatal
 error occurs. This avoids false post-invoke failures reported by apt.
+.PP
+Before acting on a package,
+.B oob
+verifies that the state file and install directory agree. If the state
+file exists but the install directory is missing (stale state), the state
+is removed and the package is treated as not installed. If the install
+directory exists but no state file is found (orphaned install), a warning
+is printed.
 .SH EXAMPLES
 Install all configured packages:
 .PP

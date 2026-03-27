@@ -26,6 +26,8 @@ oob deinit             # Remove the apt post-invoke hook
 | `-n`, `--dry-run` | Show what would happen without making changes. |
 | `-v`, `--verbose` | Increase terminal output detail. |
 | `-q`, `--quiet` | Suppress terminal output; log to file only. |
+| `-h`, `--help` | Show help message. |
+| `-V`, `--version` | Show version. |
 
 ---
 
@@ -42,6 +44,15 @@ oob deinit             # Remove the apt post-invoke hook
 7. The temporary directory is cleaned up on both success and failure.
 
 Per-package failures (download errors, checksum mismatches, version check failures) are logged and the failing package is skipped, but processing continues for remaining packages. This ensures every configured package gets a chance to update. Because partial failures are handled internally, `oob` exits `0` unless a genuine fatal error occurs — this avoids false post-invoke failures reported by apt.
+
+### Integrity Checks
+
+Before acting on a package, `oob` verifies that the state file and install directory agree:
+
+- State exists but install directory is missing (stale state) — the state is removed and the package is treated as not installed.
+- Install directory exists but no state file (orphaned install) — a warning is printed. `oob remove` offers to clean up the orphaned directory.
+
+These checks run in `install`, `check`, `list`, `status`, and `remove`.
 
 `--dry-run` shows what would happen without downloading, extracting, or modifying any files.
 
@@ -104,9 +115,9 @@ apt-oob registers itself as an apt post-invoke hook by dropping a configuration 
 ```
 # /etc/apt/apt.conf.d/99-apt-oob
 # Check for oob updates after apt update
-APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check -q; fi";};
+APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check; fi";};
 # Install oob updates after apt upgrade/full-upgrade
-DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install -q; fi";};
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install; fi";};
 ```
 
 `APT::Update::Post-Invoke-Success` runs after `apt update` completes successfully, triggering `oob check` to report available updates. `DPkg::Post-Invoke` runs after dpkg processes packages during `apt upgrade` or `apt full-upgrade`, triggering `oob install` to download and install updates. Note: if `apt upgrade` has no apt packages to upgrade, dpkg is not invoked and `oob install` will not run — use `oob install` manually in that case. If `oob install` exits non-zero, apt may report a post-invoke failure even though the apt upgrade itself succeeded — `oob` should therefore be careful to only exit non-zero on genuine errors.
