@@ -396,6 +396,39 @@ run_gpg_verify() {
 }
 
 
+# --- Helper: verification summary ---
+print_verify_summary() {
+    local name="$1"
+    local gpg_status="$2"
+    local checksum_status="$3"
+
+    local has_checks=0
+    [[ "$checksum_status" != "--" ]] && has_checks=1
+    [[ "$gpg_status" != "--" ]] && has_checks=1
+
+    # Normal mode: only print if at least one check was configured
+    # Verbose mode: always print
+    if (( ! has_checks && ! FLAG_VERBOSE )); then
+        return
+    fi
+
+    local gpg_color="$C_YELLOW" checksum_color="$C_YELLOW"
+    case "$gpg_status" in
+        OK)   gpg_color="$C_GREEN" ;;
+        FAIL) gpg_color="$C_RED" ;;
+    esac
+    case "$checksum_status" in
+        OK)   checksum_color="$C_GREEN" ;;
+        FAIL) checksum_color="$C_RED" ;;
+    esac
+
+    _log "INFO" "${name}: gpg ${gpg_status}  checksum ${checksum_status}"
+    if (( ! FLAG_QUIET )); then
+        printf "${C_CYAN}%s:${C_RESET} gpg ${gpg_color}%s${C_RESET}  checksum ${checksum_color}%s${C_RESET}\n" \
+            "$name" "$gpg_status" "$checksum_status"
+    fi
+}
+
 # --- Helper: symlink management ---
 create_symlinks() {
     local install_dir="$1"
@@ -587,10 +620,35 @@ cmd_install_package() {
     fi
 
     # Checksum
-    run_checksum "$available" "$archive" || return 1
+    local checksum_status="--"
+    local gpg_status="--"
+    local verify_failed=0
 
-    # Signature
-    run_gpg_verify "$available" "$archive" || return 1
+    if [[ "$CHECKSUM" != "none" ]]; then
+        if run_checksum "$available" "$archive"; then
+            checksum_status="OK"
+        else
+            checksum_status="FAIL"
+            verify_failed=1
+        fi
+    fi
+
+    # Signature (only if checksum didn't fail)
+    if (( ! verify_failed )) && [[ -n "$GPG_KEY" ]]; then
+        if run_gpg_verify "$available" "$archive"; then
+            gpg_status="OK"
+        else
+            gpg_status="FAIL"
+            verify_failed=1
+        fi
+    fi
+
+    print_verify_summary "$NAME" "$gpg_status" "$checksum_status"
+
+    if (( verify_failed )); then
+        error "${NAME}: verification failed — install aborted"
+        return 1
+    fi
 
     # Remove old install
     if [[ -d "$INSTALL_DIR" ]]; then

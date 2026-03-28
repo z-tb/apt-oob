@@ -50,8 +50,16 @@ oob deinit             # Remove the apt post-invoke hook
 3. The archive is downloaded to a temporary directory (created via `mktemp -d`).
 4. If `CHECKSUM` is set to a script name, the checksum script runs and `oob` verifies the download. If `CHECKSUM` is omitted (not set at all), a warning is logged about unclear intent but processing continues as if `"none"`. If explicitly set to `"none"`, no warning.
 5. If `GPG_KEY` and `GPG_SIG_URL` are set, the detached GPG signature is downloaded and verified against the archive using the key from `keys/`. If `GPG_KEY` is not set, a warning is logged (only printed with `-v`).
-6. The existing `INSTALL_DIR` for the package is removed, the archive is extracted, symlinks are created, and the state file is written.
+6. The existing `INSTALL_DIR` for the package is removed, the archive is extracted, symlinks are created, and the state file is written. If extracted files have restrictive permissions (e.g. root-only), oob warns and fixes them to 755 (directories/executables) or 644 (files).
 7. The temporary directory is cleaned up on both success and failure.
+
+After verification, a summary line is printed showing the result of each check:
+
+```
+firefox: gpg OK  checksum OK
+```
+
+Status values: `OK` (passed, green), `FAIL` (failed, red), `--` (skipped/not reached, yellow). The summary line is only shown when at least one verification method is configured, unless `-v` is specified.
 
 Per-package failures (download errors, checksum mismatches, version check failures) are logged and the failing package is skipped, but processing continues for remaining packages. This ensures every configured package gets a chance to update. Because partial failures are handled internally, `oob` exits `0` unless a genuine fatal error occurs — this avoids false post-invoke failures reported by apt.
 
