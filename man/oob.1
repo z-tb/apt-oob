@@ -52,9 +52,15 @@ script to report whether an update is available.
 .B init
 Create the directory structure under
 .IR OOB_BASE ,
+copy the
+.B oob
+binary into
+.IR bin/ ,
 write a default
 .I /etc/apt\-oob.conf
-if it does not exist, and install the apt post\-invoke hook at
+if it does not exist, write example package configs if
+.I conf.d/
+is empty, and install the apt post\-invoke hook at
 .IR /etc/apt/apt.conf.d/99\-apt\-oob .
 Warns and prompts if the hook already exists.
 .TP
@@ -77,7 +83,10 @@ Show what would happen without making any changes.
 Increase terminal output detail.
 .TP
 .BR \-q ", " \-\-quiet
-Suppress terminal output; write to log file only.
+Suppress terminal output; write to log file only. Applied automatically
+when stdout is not a terminal (e.g. cron, unattended-upgrades) unless
+.B \-v
+is explicitly set.
 .TP
 .BR \-h ", " \-\-help
 Show usage summary and exit.
@@ -194,12 +203,12 @@ Base directory to extract the archive into. Typically
 .IR ${OOB_LIVE}/${NAME} .
 .TP
 .B SYMLINKS
-Space-separated list of symlinks in
+Pipe-separated list of symlinks in
 .I linkname:relative_path
-format.
+format. Pipe delimiter allows paths with spaces. Optional; omit if no symlinks needed.
 .TP
 .B SYMLINK_DIR
-Directory in which symlinks are created.
+Directory in which symlinks are created. Required if SYMLINKS is set.
 .SH EXIT STATUS
 .B oob
 exits 0 on success. Per-package failures during
@@ -244,6 +253,17 @@ Set up the apt hook:
 .RS
 .B oob init
 .RE
+.SH INSTALLATION
+Run
+.B sudo ./install.sh
+from the repository root. This executes
+.B oob init
+(creates directories, copies binary, writes config and apt hook), then
+copies all package configs and scripts from the repo into
+.IR /usr/local/apt\-oob/ .
+It also symlinks
+.B oob
+into PATH.
 .SH SEE ALSO
 .BR apt (8),
 .BR apt\-get (8),
