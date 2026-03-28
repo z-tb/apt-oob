@@ -27,6 +27,15 @@ OOB_VERSION="0.1.0"
 # Banner style: none, simple, fancy (default: fancy)
 : "${BANNER:="fancy"}"
 
+# --- Color codes (set to empty for no color) ---
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[0;33m'
+C_CYAN='\033[0;36m'
+C_MAGENTA='\033[0;35m'
+C_WHITE='\033[1;37m'
+C_RESET='\033[0m'
+
 # --- Output functions ---
 _log() {
     local level="$1"; shift
@@ -38,32 +47,32 @@ _log() {
 
 info() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf '\033[0;36m%s\033[0m\n' "$*"
+    (( FLAG_QUIET )) || printf "${C_CYAN}%s${C_RESET}\n" "$*"
 }
 
 warn() {
     _log "WARN" "$*"
-    (( FLAG_QUIET )) || printf '\033[0;33m%s\033[0m\n' "$*" >&2
+    (( FLAG_QUIET )) || printf "${C_YELLOW}%s${C_RESET}\n" "$*" >&2
 }
 
 error() {
     _log "ERROR" "$*"
-    (( FLAG_QUIET )) || printf '\033[0;31m%s\033[0m\n' "$*" >&2
+    (( FLAG_QUIET )) || printf "${C_RED}%s${C_RESET}\n" "$*" >&2
 }
 
 success() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf '\033[0;32m%s\033[0m\n' "$*"
+    (( FLAG_QUIET )) || printf "${C_GREEN}%s${C_RESET}\n" "$*"
 }
 
 highlight() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf '\033[0;35m%s\033[0m\n' "$*"
+    (( FLAG_QUIET )) || printf "${C_MAGENTA}%s${C_RESET}\n" "$*"
 }
 
 bold() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf '\033[1;37m%s\033[0m\n' "$*"
+    (( FLAG_QUIET )) || printf "${C_WHITE}%s${C_RESET}\n" "$*"
 }
 
 
@@ -80,15 +89,15 @@ show_banner() {
     (( FLAG_QUIET )) && return
     case "$BANNER" in
         fancy)
-            printf '\033[0;36m'
+            printf "${C_CYAN}"
             echo '┌──────────────────┐'
             echo "│  apt-oob v${OOB_VERSION}  │░"
             echo '└──────────────────┘░'
             echo '  ░░░░░░░░░░░░░░░░░░░'
-            printf '\033[0m\n'
+            printf "${C_RESET}\n"
             ;;
         simple)
-            printf '\033[0;36mapt-oob - v%s\033[0m\n' "$OOB_VERSION"
+            printf "${C_CYAN}apt-oob - v%s${C_RESET}\n" "$OOB_VERSION"
             ;;
         none) ;;
     esac
