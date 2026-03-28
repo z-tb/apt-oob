@@ -6,6 +6,16 @@ apt-oob integrates with the standard apt upgrade process and runs automatically 
 
 ---
 
+## Installation
+
+```
+sudo ./install.sh
+```
+
+`install.sh` runs `oob init` (creates directory structure, copies the `oob` binary, writes `/etc/apt-oob.conf` and the apt hook), then copies all package configs and scripts from the repo into `/usr/local/apt-oob/`. It also symlinks `oob` into `PATH` (`/usr/local/bin`, `/usr/bin`, or `/bin`).
+
+---
+
 ## CLI Usage
 
 ```
@@ -79,7 +89,7 @@ firefox: installed=148.0.2 available=148.0.2 (up to date)
 
 ### Init / Deinit
 
-`oob init` writes the apt post-invoke hook file. If the hook file already exists, it warns and prompts to overwrite. `oob deinit` removes the hook file.
+`oob init` creates the directory structure under `OOB_BASE`, copies the `oob` binary into `bin/`, writes a default `/etc/apt-oob.conf` (if it doesn't exist), writes example package configs (if `conf.d/` is empty), and installs the apt hook. If the hook file already exists, it warns and prompts to overwrite. `oob deinit` removes the hook file.
 
 ---
 
@@ -96,7 +106,7 @@ Terminal output uses ANSI color codes via the following functions:
 | `highlight()` | Magenta | Highlighted text |
 | `bold()` | White | Bold/emphasized text |
 
-When `-q` is specified, all output is written to the log file only. Otherwise output goes to both terminal and log.
+When `-q` is specified, all output is written to the log file only. Otherwise output goes to both terminal and log. When stdout is not a terminal (e.g. running from cron or unattended-upgrades), `-q` is applied automatically unless `-v` is explicitly set.
 
 Logging uses syslog-style formatting:
 
@@ -242,10 +252,11 @@ VERSION_CHECK="golang-check.sh"
 # OOB_LIVE is a built-in variable set to /usr/local/apt-oob/live
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 
-# Space-separated list of symlinks to create
+# Pipe-separated list of symlinks to create
 # Format: "linkname:path_relative_to_INSTALL_DIR"
+# Multiple entries separated by | (pipe)
 # Path must include the top-level directory the tarball extracts to
-SYMLINKS="go:go/bin/go gofmt:go/bin/gofmt"
+SYMLINKS="go:go/bin/go|gofmt:go/bin/gofmt"
 
 # Directory in which symlinks are created
 SYMLINK_DIR="/usr/local/bin"
@@ -262,10 +273,10 @@ Each installed package has a corresponding state file under `state/`. These are 
 INSTALLED_VERSION="1.21.6"
 INSTALL_DATE="2026-03-22T10:23:00Z"
 INSTALL_PATH="/usr/local/apt-oob/live/golang/go"
-SYMLINKS="go:/usr/local/bin/go gofmt:/usr/local/bin/gofmt"
+SYMLINKS="go:/usr/local/bin/go|gofmt:/usr/local/bin/gofmt"
 ```
 
-Note: In conf.d, `SYMLINKS` paths are relative to `INSTALL_DIR` (e.g. `go:go/bin/go`). In state files, `SYMLINKS` records the resolved absolute paths (e.g. `go:/usr/local/bin/go`).
+Note: In conf.d, `SYMLINKS` paths are relative to `INSTALL_DIR` (e.g. `go:go/bin/go`). In state files, `SYMLINKS` records the resolved absolute paths (e.g. `go:/usr/local/bin/go`). Multiple entries are separated by `|` (pipe) to support paths containing spaces.
 
 ---
 

@@ -1,0 +1,7 @@
+NAME="nextcloud-talk"
+DOWNLOAD="nextcloud-talk-download.sh"
+CHECKSUM="nextcloud-talk-verify.sh"
+VERSION_CHECK="nextcloud-talk-check.sh"
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+SYMLINKS="nextcloud-talk:Nextcloud Talk-linux-x64/Nextcloud Talk"
+SYMLINK_DIR="/usr/local/bin"

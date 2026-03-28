@@ -176,8 +176,6 @@ load_conf() {
     [[ -z "$DOWNLOAD" ]]      && missing+=("DOWNLOAD")
     [[ -z "$VERSION_CHECK" ]] && missing+=("VERSION_CHECK")
     [[ -z "$INSTALL_DIR" ]]   && missing+=("INSTALL_DIR")
-    [[ -z "$SYMLINKS" ]]      && missing+=("SYMLINKS")
-    [[ -z "$SYMLINK_DIR" ]]   && missing+=("SYMLINK_DIR")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         error "${conf_file}: missing required fields: ${missing[*]}"
@@ -396,8 +394,11 @@ create_symlinks() {
     local symlinks="$3"
     local resolved=""
 
+    [[ -z "$symlinks" || "$symlinks" == "none" ]] && return 0
+
     mkdir -p "$symlink_dir"
 
+    local IFS='|'
     for entry in $symlinks; do
         local linkname="${entry%%:*}"
         local relpath="${entry#*:}"
@@ -411,7 +412,7 @@ create_symlinks() {
             (( FLAG_VERBOSE )) && info "${NAME}: symlink ${linkpath} -> ${target}"
         fi
 
-        [[ -n "$resolved" ]] && resolved+=" "
+        [[ -n "$resolved" ]] && resolved+="|"
         resolved+="${linkname}:${linkpath}"
     done
 
@@ -421,6 +422,7 @@ create_symlinks() {
 remove_symlinks() {
     local symlinks="$1"
 
+    local IFS='|'
     for entry in $symlinks; do
         local linkpath="${entry#*:}"
         if [[ -L "$linkpath" ]]; then
@@ -590,6 +592,21 @@ cmd_install_package() {
     # Extract
     info "${NAME}: extracting to ${INSTALL_DIR}"
     extract_archive "$archive" "$INSTALL_DIR" || return 1
+
+    # Check for restrictive permissions after extraction
+    local dir_perms
+    dir_perms=$(find "$INSTALL_DIR" -type d ! -perm -o=rx -print -quit 2>/dev/null)
+    if [[ -n "$dir_perms" ]]; then
+        warn "${NAME}: extracted directories have restrictive permissions — fixing to 755"
+        find "$INSTALL_DIR" -type d -exec chmod 755 {} +
+    fi
+    local file_perms
+    file_perms=$(find "$INSTALL_DIR" -type f ! -perm -o=r -print -quit 2>/dev/null)
+    if [[ -n "$file_perms" ]]; then
+        warn "${NAME}: extracted files have restrictive permissions — fixing to 644/755"
+        find "$INSTALL_DIR" -type f -executable -exec chmod 755 {} +
+        find "$INSTALL_DIR" -type f ! -executable -exec chmod 644 {} +
+    fi
 
     # Symlinks
     local resolved
