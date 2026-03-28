@@ -21,6 +21,7 @@ FLAG_FORCE=0
 FLAG_DRYRUN=0
 FLAG_VERBOSE=0
 FLAG_QUIET=0
+FLAG_TERSE=0
 
 OOB_VERSION="0.1.0"
 
@@ -47,32 +48,44 @@ _log() {
 
 info() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf "${C_CYAN}%s${C_RESET}\n" "$*"
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then return; fi
+    printf "${C_CYAN}%s${C_RESET}\n" "$*"
 }
 
 warn() {
     _log "WARN" "$*"
-    (( FLAG_QUIET )) || printf "${C_YELLOW}%s${C_RESET}\n" "$*" >&2
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then echo "apt-oob: warning: $*" >&2; return; fi
+    printf "${C_YELLOW}%s${C_RESET}\n" "$*" >&2
 }
 
 error() {
     _log "ERROR" "$*"
-    (( FLAG_QUIET )) || printf "${C_RED}%s${C_RESET}\n" "$*" >&2
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then echo "apt-oob: error: $*" >&2; return; fi
+    printf "${C_RED}%s${C_RESET}\n" "$*" >&2
 }
 
 success() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf "${C_GREEN}%s${C_RESET}\n" "$*"
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then echo "apt-oob: $*"; return; fi
+    printf "${C_GREEN}%s${C_RESET}\n" "$*"
 }
 
 highlight() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf "${C_MAGENTA}%s${C_RESET}\n" "$*"
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then echo "apt-oob: $*"; return; fi
+    printf "${C_MAGENTA}%s${C_RESET}\n" "$*"
 }
 
 bold() {
     _log "INFO" "$*"
-    (( FLAG_QUIET )) || printf "${C_WHITE}%s${C_RESET}\n" "$*"
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then return; fi
+    printf "${C_WHITE}%s${C_RESET}\n" "$*"
 }
 
 
@@ -87,6 +100,7 @@ check_root() {
 # --- Help ---
 show_banner() {
     (( FLAG_QUIET )) && return
+    (( FLAG_TERSE )) && return
     case "$BANNER" in
         fancy)
             printf "${C_CYAN}"
@@ -121,6 +135,7 @@ flags:
   -n, --dry-run      Show what would happen without making changes
   -v, --verbose      Increase terminal output detail
   -q, --quiet        Suppress terminal output; log to file only
+  -t, --terse        Minimal plain-text output (no color, no banner) for apt hook mode
   -h, --help         Show this help message
   -V, --version      Show version
 HELP
@@ -137,6 +152,7 @@ parse_args() {
             -n|--dry-run) FLAG_DRYRUN=1 ;;
             -v|--verbose) FLAG_VERBOSE=1 ;;
             -q|--quiet)   FLAG_QUIET=1 ;;
+            -t|--terse)   FLAG_TERSE=1 ;;
             -h|--help)    show_help; exit 0 ;;
             --version|-V) echo "oob ${OOB_VERSION}"; exit 0 ;;
             install|check|remove|list|status|init|deinit)
@@ -423,7 +439,11 @@ print_verify_summary() {
     esac
 
     _log "INFO" "${name}: gpg ${gpg_status}  checksum ${checksum_status}"
-    if (( ! FLAG_QUIET )); then
+    if (( FLAG_QUIET )); then
+        return
+    elif (( FLAG_TERSE )); then
+        echo "apt-oob: ${name}: gpg ${gpg_status}  checksum ${checksum_status}"
+    else
         printf "${C_CYAN}%s:${C_RESET} gpg ${gpg_color}%s${C_RESET}  checksum ${checksum_color}%s${C_RESET}\n" \
             "$name" "$gpg_status" "$checksum_status"
     fi
@@ -1014,9 +1034,9 @@ SCRIPT
     cat > "$APT_HOOK" <<'EOF'
 # /etc/apt/apt.conf.d/99-apt-oob
 # Check for oob updates after apt update
-APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check; fi";};
+APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check --terse; fi";};
 # Install oob updates after apt upgrade/full-upgrade
-DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install; fi";};
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install --terse; fi";};
 EOF
 
     success "apt hook installed: ${APT_HOOK}"

@@ -90,6 +90,11 @@ when stdout is not a terminal (e.g. cron, unattended-upgrades) unless
 .B \-v
 is explicitly set.
 .TP
+.BR \-t ", " \-\-terse
+Minimal plain-text output with no color and no banner. Lines are prefixed
+with "apt-oob:" for easy identification. Used by the apt hooks for
+output that blends with apt's own style. Errors and warnings still print.
+.TP
 .BR \-h ", " \-\-help
 Show usage summary and exit.
 .TP
