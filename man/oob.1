@@ -24,7 +24,9 @@ Install or update all configured packages, or a single package by
 .IR name .
 Downloads the archive to a temporary directory, verifies checksum and
 signature if configured, removes the old install directory, extracts,
-creates symlinks, and writes the state file.
+creates symlinks, and writes the state file. A verification summary line
+is printed after checks complete (e.g. "gpg OK  checksum OK"). If
+extracted files have restrictive permissions, they are fixed automatically.
 Per-package failures are logged and skipped; remaining packages still
 get a chance to update.
 .TP
