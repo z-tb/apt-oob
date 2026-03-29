@@ -821,14 +821,14 @@ cmd_check() {
         if [[ "$INTEGRITY" == "ok" ]]; then
             read_state "$NAME"
             if [[ "$INSTALLED_VERSION" == "$available" ]]; then
-                fmt_print "INFO" "${NAME}: {CYAN}installed=${INSTALLED_VERSION} available=${available} (up to date)"
+                fmt_print "INFO" "{WHITE}${NAME}: {CYAN}installed=${INSTALLED_VERSION} available=${available} (up to date)"
                 count_uptodate=$((count_uptodate + 1))
             else
-                fmt_print "INFO" "${NAME}: {MAGENTA}installed=${INSTALLED_VERSION} available=${available}"
+                fmt_print "INFO" "{WHITE}${NAME}: {MAGENTA}installed=${INSTALLED_VERSION} available=${available}"
                 count_updates=$((count_updates + 1))
             fi
         else
-            fmt_print "INFO" "${NAME}: {MAGENTA}not installed, available=${available}"
+            fmt_print "INFO" "{WHITE}${NAME}: {MAGENTA}not installed, available=${available}"
             count_notinstalled=$((count_notinstalled + 1))
         fi
     done

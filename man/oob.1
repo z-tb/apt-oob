@@ -88,12 +88,13 @@ Increase terminal output detail.
 Suppress terminal output; write to log file only. Applied automatically
 when stdout is not a terminal (e.g. cron, unattended-upgrades) unless
 .B \-v
+or
+.B \-t
 is explicitly set.
 .TP
 .BR \-t ", " \-\-terse
-Minimal plain-text output with no color and no banner. Lines are prefixed
-with "apt-oob:" for easy identification. Used by the apt hooks for
-output that blends with apt's own style. Errors and warnings still print.
+Minimal output for apt hooks. No banner, plain text with "apt-oob:" prefix.
+Warnings print in yellow, errors in red. Overrides auto-quiet when set.
 .TP
 .BR \-h ", " \-\-help
 Show usage summary and exit.
@@ -176,18 +177,51 @@ removed by
 .SH CONFIGURATION
 Package configuration files under
 .I conf.d/
-are shell-sourceable key=value files. The following built-in variables are
-available for use in conf.d files:
+are shell-sourceable key=value files.
+.SS Built-in Variables
+Available in conf.d files, expanded at source time:
+.TP
 .B ${OOB_BASE}
-(root directory),
+Root directory (default: /usr/local/apt-oob)
+.TP
+.B ${OOB_CONF}
+Package configuration directory
+.TP
+.B ${OOB_CHECKVER}
+Version check scripts directory
+.TP
+.B ${OOB_DLOAD}
+Download scripts directory
+.TP
+.B ${OOB_CHECKSUM}
+Checksum scripts directory
+.TP
+.B ${OOB_KEYS}
+GPG keys directory
+.TP
 .B ${OOB_LIVE}
-(installed packages directory),
-.B ${OOB_CONF}\fR, \fB${OOB_CHECKVER}\fR, \fB${OOB_DLOAD}\fR, \fB${OOB_CHECKSUM}\fR, \fB${OOB_KEYS}\fR, \fB${OOB_STATE}
-(subdirectories). These are expanded at source time.
+Installed packages directory
+.TP
+.B ${OOB_STATE}
+State files directory
+.TP
 .B ${NAME}
-is available after it is defined in the conf file.
-.PP
-Fields:
+Current package name (available after NAME= is defined in the conf file)
+.SS Template Variables
+Substituted at runtime using the version string from VERSION_CHECK. Available in DOWNLOAD, GPG_SIG_URL, and SYMLINKS:
+.TP
+.B {VERSION}
+Full version string (e.g. 1.21.6)
+.TP
+.B {MAJOR}
+Major component (e.g. 1)
+.TP
+.B {MINOR}
+Minor component (e.g. 21)
+.TP
+.B {REVISION}
+Revision component (e.g. 6)
+.SS Fields
 .TP
 .B NAME
 Package name. Used for directory naming under live/ and state/.
@@ -223,7 +257,8 @@ Base directory to extract the archive into. Typically
 .B SYMLINKS
 Pipe-separated list of symlinks in
 .I linkname:relative_path
-format. Pipe delimiter allows paths with spaces. Optional; omit if no symlinks needed.
+format. Pipe delimiter allows paths with spaces. Supports {VERSION} template
+variables in relative paths. Optional; omit if no symlinks needed.
 .TP
 .B SYMLINK_DIR
 Directory in which symlinks are created. Required if SYMLINKS is set.
