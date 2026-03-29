@@ -176,7 +176,18 @@ removed by
 .SH CONFIGURATION
 Package configuration files under
 .I conf.d/
-are shell-sourceable key=value files with the following fields:
+are shell-sourceable key=value files. The following built-in variables are
+available for use in conf.d files:
+.B ${OOB_BASE}
+(root directory),
+.B ${OOB_LIVE}
+(installed packages directory),
+.B ${OOB_CONF}\fR, \fB${OOB_CHECKVER}\fR, \fB${OOB_DLOAD}\fR, \fB${OOB_CHECKSUM}\fR, \fB${OOB_KEYS}\fR, \fB${OOB_STATE}
+(subdirectories). These are expanded at source time.
+.B ${NAME}
+is available after it is defined in the conf file.
+.PP
+Fields:
 .TP
 .B NAME
 Package name. Used for directory naming under live/ and state/.

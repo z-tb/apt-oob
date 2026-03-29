@@ -1,0 +1,7 @@
+NAME="bat"
+DOWNLOAD="bat-download.sh"
+CHECKSUM="bat-verify.sh"
+VERSION_CHECK="bat-check.sh"
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+SYMLINKS="bat:bat-v{VERSION}-x86_64-unknown-linux-gnu/bat"
+SYMLINK_DIR="/usr/local/bin"

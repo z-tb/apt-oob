@@ -56,14 +56,14 @@ info() {
 warn() {
     _log "WARN" "$*"
     if (( FLAG_QUIET )); then return; fi
-    if (( FLAG_TERSE )); then echo "apt-oob: warning: $*" >&2; return; fi
+    if (( FLAG_TERSE )); then printf "${C_YELLOW}apt-oob: warning: %s${C_RESET}\n" "$*"; return; fi
     printf "${C_YELLOW}%s${C_RESET}\n" "$*" >&2
 }
 
 error() {
     _log "ERROR" "$*"
     if (( FLAG_QUIET )); then return; fi
-    if (( FLAG_TERSE )); then echo "apt-oob: error: $*" >&2; return; fi
+    if (( FLAG_TERSE )); then printf "${C_RED}apt-oob: error: %s${C_RESET}\n" "$*"; return; fi
     printf "${C_RED}%s${C_RESET}\n" "$*" >&2
 }
 
@@ -86,6 +86,65 @@ bold() {
     if (( FLAG_QUIET )); then return; fi
     if (( FLAG_TERSE )); then return; fi
     printf "${C_WHITE}%s${C_RESET}\n" "$*"
+}
+
+# Formatted print with inline color tokens: {RED}, {GREEN}, {YELLOW}, {CYAN}, {MAGENTA}, {WHITE}, {RESET}
+# Prints in all modes except quiet. In terse mode, tokens are stripped and prefixed with "apt-oob:".
+# First arg is log level (INFO, WARN, ERROR), rest is the message.
+fmt_print() {
+    local level="$1"; shift
+    local msg="$*"
+    local plain
+    plain=$(echo "$msg" | sed 's/{[A-Z]*}//g')
+    _log "$level" "$plain"
+    if (( FLAG_QUIET )); then return; fi
+    if (( FLAG_TERSE )); then
+        echo "apt-oob: ${plain}"
+        return
+    fi
+    msg="${msg//\{RED\}/$C_RED}"
+    msg="${msg//\{GREEN\}/$C_GREEN}"
+    msg="${msg//\{YELLOW\}/$C_YELLOW}"
+    msg="${msg//\{CYAN\}/$C_CYAN}"
+    msg="${msg//\{MAGENTA\}/$C_MAGENTA}"
+    msg="${msg//\{WHITE\}/$C_WHITE}"
+    msg="${msg//\{RESET\}/$C_RESET}"
+    printf "%b\n" "$msg"
+}
+
+# --- Spinner (dot bounce) ---
+SPIN_PID=""
+SPIN_FRAMES=("⠁" "⠂" "⠄" "⡀" "⢀" "⠠" "⠐" "⠈")
+
+_spinner() {
+    local msg="$1"
+    local i=0
+    local count=${#SPIN_FRAMES[@]}
+    while true; do
+        printf "\r${C_CYAN}%s${C_RESET} %s " "$msg" "${SPIN_FRAMES[i % count]}"
+        i=$((i + 1))
+        sleep 0.1
+    done
+}
+
+spin_start() {
+    local msg="$1"
+    (( FLAG_QUIET )) && return
+    (( FLAG_TERSE )) && return
+    _spinner "$msg" &
+    SPIN_PID=$!
+    disown "$SPIN_PID" 2>/dev/null
+}
+
+spin_stop() {
+    local msg="${1:-}"
+    if [[ -n "$SPIN_PID" ]]; then
+        kill "$SPIN_PID" 2>/dev/null
+        wait "$SPIN_PID" 2>/dev/null || true
+        SPIN_PID=""
+        # Clear the spinner line
+        printf "\r\033[K"
+    fi
 }
 
 
@@ -428,25 +487,19 @@ print_verify_summary() {
         return
     fi
 
-    local gpg_color="$C_YELLOW" checksum_color="$C_YELLOW"
+    local gpg_tag checksum_tag
     case "$gpg_status" in
-        OK)   gpg_color="$C_GREEN" ;;
-        FAIL) gpg_color="$C_RED" ;;
+        OK)   gpg_tag="{GREEN}OK{RESET}" ;;
+        FAIL) gpg_tag="{RED}FAIL{RESET}" ;;
+        --)   gpg_tag="{YELLOW}--{RESET}" ;;
     esac
     case "$checksum_status" in
-        OK)   checksum_color="$C_GREEN" ;;
-        FAIL) checksum_color="$C_RED" ;;
+        OK)   checksum_tag="{GREEN}OK{RESET}" ;;
+        FAIL) checksum_tag="{RED}FAIL{RESET}" ;;
+        --)   checksum_tag="{YELLOW}--{RESET}" ;;
     esac
 
-    _log "INFO" "${name}: gpg ${gpg_status}  checksum ${checksum_status}"
-    if (( FLAG_QUIET )); then
-        return
-    elif (( FLAG_TERSE )); then
-        echo "apt-oob: ${name}: gpg ${gpg_status}  checksum ${checksum_status}"
-    else
-        printf "${C_CYAN}%s:${C_RESET} gpg ${gpg_color}%s${C_RESET}  checksum ${checksum_color}%s${C_RESET}\n" \
-            "$name" "$gpg_status" "$checksum_status"
-    fi
+    fmt_print "INFO" "${name}: gpg ${gpg_tag}  checksum ${checksum_tag}"
 }
 
 # --- Helper: symlink management ---
@@ -454,6 +507,7 @@ create_symlinks() {
     local install_dir="$1"
     local symlink_dir="$2"
     local symlinks="$3"
+    local version="${4:-}"
     local resolved=""
 
     [[ -z "$symlinks" || "$symlinks" == "none" ]] && return 0
@@ -464,6 +518,10 @@ create_symlinks() {
     for entry in $symlinks; do
         local linkname="${entry%%:*}"
         local relpath="${entry#*:}"
+        # Expand template variables in relpath if version provided
+        if [[ -n "$version" ]]; then
+            relpath=$(expand_template "$version" "$relpath")
+        fi
         local target="${install_dir}/${relpath}"
         local linkpath="${symlink_dir}/${linkname}"
 
@@ -602,7 +660,7 @@ cmd_install_package() {
     if [[ "$INTEGRITY" == "ok" ]]; then
         read_state "$NAME"
         if [[ "$INSTALLED_VERSION" == "$available" ]] && (( ! FLAG_FORCE )); then
-            info "${NAME}: already at version ${available}"
+            fmt_print "INFO" "${NAME}: {CYAN}up to date (${available})"
             return 0
         fi
     elif [[ "$INTEGRITY" == "stale_state" ]]; then
@@ -633,11 +691,14 @@ cmd_install_package() {
     filename=$(basename "$url" | sed 's/?.*//')
     local archive="${tmpdir}/${filename}"
 
-    info "${NAME}: downloading ${url}"
+    fmt_print "INFO" "${NAME}: {CYAN}downloading ${available}..."
+    spin_start "${NAME}: downloading ${available}"
     if ! curl -sfL -o "$archive" "$url"; then
+        spin_stop
         error "${NAME}: download failed"
         return 1
     fi
+    spin_stop
 
     # Checksum
     local checksum_status="--"
@@ -677,8 +738,10 @@ cmd_install_package() {
     fi
 
     # Extract
-    info "${NAME}: extracting to ${INSTALL_DIR}"
-    extract_archive "$archive" "$INSTALL_DIR" || return 1
+    fmt_print "INFO" "${NAME}: {CYAN}extracting to ${INSTALL_DIR}"
+    spin_start "${NAME}: extracting"
+    extract_archive "$archive" "$INSTALL_DIR" || { spin_stop; return 1; }
+    spin_stop
 
     # Check for restrictive permissions after extraction
     local dir_perms
@@ -697,12 +760,12 @@ cmd_install_package() {
 
     # Symlinks
     local resolved
-    resolved=$(create_symlinks "$INSTALL_DIR" "$SYMLINK_DIR" "$SYMLINKS")
+    resolved=$(create_symlinks "$INSTALL_DIR" "$SYMLINK_DIR" "$SYMLINKS" "$available")
 
     # State
     write_state "$NAME" "$available" "$INSTALL_DIR" "$resolved"
 
-    success "${NAME}: installed version ${available}"
+    fmt_print "INFO" "${NAME}: {GREEN}installed version ${available}"
     return 0
 }
 
@@ -725,6 +788,9 @@ cmd_install() {
 # --- Command: check ---
 cmd_check() {
     local confs=()
+    local count_uptodate=0
+    local count_updates=0
+    local count_notinstalled=0
 
     if [[ -n "$TARGET_NAME" ]]; then
         local conf_file
@@ -755,14 +821,30 @@ cmd_check() {
         if [[ "$INTEGRITY" == "ok" ]]; then
             read_state "$NAME"
             if [[ "$INSTALLED_VERSION" == "$available" ]]; then
-                info "${NAME}: installed=${INSTALLED_VERSION} available=${available} (up to date)"
+                fmt_print "INFO" "${NAME}: {CYAN}installed=${INSTALLED_VERSION} available=${available} (up to date)"
+                count_uptodate=$((count_uptodate + 1))
             else
-                highlight "${NAME}: installed=${INSTALLED_VERSION} available=${available}"
+                fmt_print "INFO" "${NAME}: {MAGENTA}installed=${INSTALLED_VERSION} available=${available}"
+                count_updates=$((count_updates + 1))
             fi
         else
-            highlight "${NAME}: not installed, available=${available}"
+            fmt_print "INFO" "${NAME}: {MAGENTA}not installed, available=${available}"
+            count_notinstalled=$((count_notinstalled + 1))
         fi
     done
+
+    # Summary
+    local total=$((count_updates + count_notinstalled))
+    if (( total > 0 )); then
+        local parts=()
+        (( count_updates > 0 )) && parts+=("${count_updates} update(s)")
+        (( count_notinstalled > 0 )) && parts+=("${count_notinstalled} not installed")
+        local summary
+        summary=$(IFS=', '; echo "${parts[*]}")
+        warn "${summary}. Run 'oob install' to install/update."
+    else
+        fmt_print "INFO" "{CYAN}all packages up to date."
+    fi
 }
 
 
@@ -823,22 +905,34 @@ cmd_remove() {
     [[ -n "$STATE_SYMLINKS" ]] && remove_symlinks "$STATE_SYMLINKS"
 
     # Remove installed files
+    spin_start "${TARGET_NAME}: removing"
     if [[ -d "$INSTALL_PATH" ]]; then
         rm -rf "$INSTALL_PATH"
         info "${TARGET_NAME}: removed ${INSTALL_PATH}"
     fi
 
-    # Also remove the parent INSTALL_DIR if empty
+    # Also try INSTALL_DIR from conf if different from INSTALL_PATH
+    local conf_file
+    if conf_file=$(find_conf_by_name "$TARGET_NAME" 2>/dev/null); then
+        load_conf "$conf_file" 2>/dev/null || true
+        if [[ -d "$INSTALL_DIR" && "$INSTALL_DIR" != "$INSTALL_PATH" ]]; then
+            rm -rf "$INSTALL_DIR"
+            info "${TARGET_NAME}: removed ${INSTALL_DIR}"
+        fi
+    fi
+
+    # Also remove the parent directory if empty
     local parent
     parent=$(dirname "$INSTALL_PATH")
     if [[ -d "$parent" ]] && [[ -z "$(ls -A "$parent" 2>/dev/null)" ]]; then
         rmdir "$parent" 2>/dev/null || true
     fi
+    spin_stop
 
     # Remove state
     rm -f "${OOB_STATE}/${TARGET_NAME}"
 
-    success "${TARGET_NAME}: removed"
+    fmt_print "INFO" "${TARGET_NAME}: {GREEN}removed"
 }
 
 # --- Command: list ---
@@ -1063,8 +1157,8 @@ main() {
     parse_args "$@"
     check_root
 
-    # Auto-quiet when stdout is not a terminal (unless -v explicitly set)
-    if [[ ! -t 1 ]] && (( ! FLAG_VERBOSE )); then
+    # Auto-quiet when stdout is not a terminal (unless -v or -t explicitly set)
+    if [[ ! -t 1 ]] && (( ! FLAG_VERBOSE )) && (( ! FLAG_TERSE )); then
         FLAG_QUIET=1
     fi
 

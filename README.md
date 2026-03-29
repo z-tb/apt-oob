@@ -207,6 +207,28 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 
 Configuration files are plain shell-sourceable key=value files. They are loaded in lexical order — numeric prefixes (`10-`, `20-`) control precedence. Each file configures one package.
 
+### Built-in Variables
+
+The following variables are set by `oob` and available for use in conf.d files:
+
+| Variable | Value | Description |
+|---|---|---|
+| `${OOB_BASE}` | `/usr/local/apt-oob` | Root directory (from config or default) |
+| `${OOB_CONF}` | `${OOB_BASE}/conf.d` | Package configuration directory |
+| `${OOB_CHECKVER}` | `${OOB_BASE}/checkver` | Version check scripts directory |
+| `${OOB_DLOAD}` | `${OOB_BASE}/dload` | Download scripts directory |
+| `${OOB_CHECKSUM}` | `${OOB_BASE}/checksum` | Checksum scripts directory |
+| `${OOB_KEYS}` | `${OOB_BASE}/keys` | GPG keys directory |
+| `${OOB_LIVE}` | `${OOB_BASE}/live` | Installed packages directory |
+| `${OOB_STATE}` | `${OOB_BASE}/state` | State files directory |
+| `${NAME}` | *(set by conf.d)* | Current package name (available after `NAME=` is defined in the conf file) |
+
+These are shell variables expanded at source time. `${OOB_LIVE}` and `${NAME}` are commonly used together in `INSTALL_DIR`:
+
+```sh
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+```
+
 ### Template Variables
 
 The following variables are available for use in `DOWNLOAD` and `GPG_SIG_URL` when they contain an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
