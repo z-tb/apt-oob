@@ -36,7 +36,7 @@ oob deinit             # Remove the apt post-invoke hook
 | `-n`, `--dry-run` | Show what would happen without making changes. |
 | `-v`, `--verbose` | Increase terminal output detail. |
 | `-q`, `--quiet` | Suppress terminal output; log to file only. |
-| `-t`, `--terse` | Minimal plain-text output (no color, no banner). Used by apt hooks. |
+| `-t`, `--terse` | Minimal output for apt hooks. No banner, plain text with `apt-oob:` prefix. Warnings print in yellow, errors in red. |
 | `-h`, `--help` | Show help message. |
 | `-V`, `--version` | Show version. |
 
@@ -77,12 +77,16 @@ These checks run in `install`, `check`, `list`, `status`, and `remove`.
 
 ### Check
 
-`oob check` runs version checks only without downloading or installing. Output per package:
+`oob check` runs version checks only without downloading or installing. Output per package (package names in white, status in cyan/magenta):
 
 ```
 golang: installed=1.21.6 available=1.22.0
 firefox: installed=148.0.2 available=148.0.2 (up to date)
 ```
+
+After listing all packages, a summary line is printed:
+- If updates or uninstalled packages exist: yellow warning with count and `Run 'oob install' to install/update.`
+- If all packages are up to date: cyan informational message.
 
 ### Remove
 
@@ -231,7 +235,7 @@ INSTALL_DIR="${OOB_LIVE}/${NAME}"
 
 ### Template Variables
 
-The following variables are available for use in `DOWNLOAD` and `GPG_SIG_URL` when they contain an `https://` URL. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
+The following variables are available for use in `DOWNLOAD`, `GPG_SIG_URL`, and `SYMLINKS` when they contain template placeholders. They are substituted by `oob` at runtime using the version string returned by `VERSION_CHECK`.
 
 | Variable | Description |
 |---|---|
