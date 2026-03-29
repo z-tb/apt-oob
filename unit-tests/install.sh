@@ -51,7 +51,7 @@ assert_link "${TEST_TMPDIR}/bin/testpkg" "symlink created"
 FLAG_QUIET=0
 output=$(cmd_install 2>&1)
 FLAG_QUIET=1
-assert_contains "$output" "already at version" "skip current version"
+assert_contains "$output" "up to date" "skip current version"
 
 # Force reinstall
 FLAG_FORCE=1
