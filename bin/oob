@@ -556,6 +556,77 @@ remove_symlinks() {
     done
 }
 
+# Check symlinks for a package — returns number of broken links
+# If fix=1, recreates broken symlinks using conf.d SYMLINKS and INSTALL_DIR
+check_symlinks() {
+    local name="$1"
+    local state_symlinks="$2"
+    local fix="${3:-0}"
+    local broken=0
+
+    [[ -z "$state_symlinks" ]] && return 0
+
+    local IFS='|'
+    for entry in $state_symlinks; do
+        local linkname="${entry%%:*}"
+        local linkpath="${entry#*:}"
+
+        if [[ ! -L "$linkpath" ]]; then
+            warn "${name}: symlink missing: ${linkpath}"
+            broken=$((broken + 1))
+        elif [[ ! -e "$linkpath" ]]; then
+            warn "${name}: broken symlink: ${linkpath} (target missing)"
+            broken=$((broken + 1))
+            if (( fix )); then
+                rm -f "$linkpath"
+            fi
+        else
+            (( FLAG_VERBOSE )) && info "${name}: symlink OK: ${linkpath}"
+        fi
+    done
+
+    # Recreate broken symlinks from conf.d if fix requested
+    if (( fix && broken > 0 )); then
+        local conf_file
+        if conf_file=$(find_conf_by_name "$name" 2>/dev/null); then
+            load_conf "$conf_file" 2>/dev/null || return "$broken"
+            # Save conf.d SYMLINKS (relative paths) before read_state overwrites it
+            local conf_symlinks="$SYMLINKS"
+            local conf_install_dir="$INSTALL_DIR"
+            local conf_symlink_dir="$SYMLINK_DIR"
+            if read_state "$name"; then
+                local resolved
+                resolved=$(create_symlinks "$conf_install_dir" "$conf_symlink_dir" "$conf_symlinks" "$INSTALLED_VERSION")
+                # Verify recreated symlinks
+                local IFS='|'
+                local all_ok=1
+                for entry in $resolved; do
+                    local lpath="${entry#*:}"
+                    local target
+                    target=$(readlink -f "$lpath" 2>/dev/null)
+                    if [[ ! -e "$target" ]]; then
+                        warn "${name}: symlink ${lpath} target does not exist"
+                        all_ok=0
+                    elif [[ ! -r "$target" ]]; then
+                        warn "${name}: symlink ${lpath} target is not readable"
+                        all_ok=0
+                    elif [[ ! -x "$target" ]]; then
+                        warn "${name}: symlink ${lpath} target is not executable"
+                        all_ok=0
+                    fi
+                done
+                if (( all_ok )); then
+                    success "${name}: recreated ${broken} symlink(s) — verified OK"
+                else
+                    warn "${name}: recreated ${broken} symlink(s) — some targets have issues"
+                fi
+            fi
+        fi
+    fi
+
+    return "$broken"
+}
+
 # --- Helper: state file management ---
 read_state() {
     local name="$1"
@@ -820,6 +891,8 @@ cmd_check() {
 
         if [[ "$INTEGRITY" == "ok" ]]; then
             read_state "$NAME"
+            # Check and fix broken symlinks
+            check_symlinks "$NAME" "$STATE_SYMLINKS" 1 || true
             if [[ "$INSTALLED_VERSION" == "$available" ]]; then
                 fmt_print "INFO" "{WHITE}${NAME}: {CYAN}installed=${INSTALLED_VERSION} available=${available} (up to date)"
                 count_uptodate=$((count_uptodate + 1))
@@ -986,6 +1059,8 @@ cmd_status() {
         info "  date:     ${INSTALL_DATE}"
         info "  path:     ${INSTALL_PATH}"
         info "  symlinks: ${STATE_SYMLINKS}"
+        # Check symlinks (report only, no fix in status)
+        check_symlinks "$NAME" "$STATE_SYMLINKS" 0 || true
     elif [[ "$INTEGRITY" == "stale_state" ]]; then
         read_state "$NAME"
         bold "${NAME}"

@@ -1,0 +1,7 @@
+NAME="golang"
+DOWNLOAD="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz"
+CHECKSUM="golang-verify.sh"
+VERSION_CHECK="golang-check.sh"
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+SYMLINKS="go:go/bin/go|gofmt:go/bin/gofmt"
+SYMLINK_DIR="/usr/local/bin"
