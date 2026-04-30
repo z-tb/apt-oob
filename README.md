@@ -4,6 +4,8 @@
 
 apt-oob integrates with the standard apt upgrade process and runs automatically when `apt upgrade` or `apt-get upgrade` is invoked.
 
+This project is ai-assisted. I've been running it personally for a month or so to proof it out and have been making incremental changes.
+
 ---
 
 ## Installation
@@ -160,11 +162,13 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 │   ├── 20-thunderbird
 │   ├── 30-nextcloud-talk
 │   ├── 40-bat
-│   └── 50-golang
+│   ├── 50-golang
+│   └── 60-corretto
 ├── checkver/                # Version check scripts (print latest version string to stdout)
 │   ├── bat-check.sh
 │   ├── firefox-check.sh
 │   ├── golang-check.sh
+│   ├── corretto-check.sh
 │   ├── nextcloud-talk-check.sh
 │   └── thunderbird-check.sh
 ├── dload/                   # URL resolvers (receive version as $1, print URL to stdout)
@@ -172,6 +176,7 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 │   └── nextcloud-talk-download.sh
 ├── checksum/                # Checksum scripts (print algo:hash to stdout)
 │   ├── bat-verify.sh
+│   ├── corretto-verify.sh
 │   ├── firefox-verify.sh
 │   ├── golang-verify.sh
 │   ├── nextcloud-talk-verify.sh
@@ -257,7 +262,7 @@ The following variables are available for use in `DOWNLOAD`, `GPG_SIG_URL`, and 
 
 ### Reference
 
-This example shows how you would configure Amazon Corretto 26 (not bundled, shown for illustration):
+This example shows the Amazon Corretto 26 configuration (bundled as `60-corretto`):
 
 ```sh
 # conf.d/60-corretto
@@ -307,7 +312,7 @@ SYMLINKS="java:amazon-corretto-{VERSION}-linux-x64/bin/java|javac:amazon-corrett
 SYMLINK_DIR="/usr/local/bin"
 ```
 
-The corresponding scripts would be:
+The corresponding scripts are:
 
 - `checkver/corretto-check.sh` - queries the GitHub API for the latest `corretto/corretto-26` release tag
 - `checksum/corretto-verify.sh` - fetches the sha256 from `https://corretto.aws/downloads/latest_sha256/amazon-corretto-26-x64-linux-jdk.tar.gz`
