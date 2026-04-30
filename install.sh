@@ -20,6 +20,8 @@ for dir in conf.d checkver checksum dload keys; do
     # Only copy files that exist in the repo
     for f in "$src"/*; do
         [[ -f "$f" ]] || continue
+        # Skip if repo lives inside OOB_BASE (source and dest are the same file)
+        [[ "$(realpath "$f")" == "$(realpath "$dest/$(basename "$f")" 2>/dev/null)" ]] && continue
         cp "$f" "$dest/"
         chmod +x "$dest/$(basename "$f")" 2>/dev/null || true
         echo "  installed: ${dest}/$(basename "$f")"

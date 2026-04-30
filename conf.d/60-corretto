@@ -5,3 +5,15 @@ VERSION_CHECK="corretto-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="java:amazon-corretto-{VERSION}-linux-x64/bin/java|javac:amazon-corretto-{VERSION}-linux-x64/bin/javac"
 SYMLINK_DIR="/usr/local/bin"
+
+# After install, you may need to set JAVA_HOME for tools that expect it.
+# oob installs to /usr/local/apt-oob/live/corretto/amazon-corretto-<version>-linux-x64
+# Add to /etc/environment or your shell profile:
+#
+#   export JAVA_HOME=/usr/local/apt-oob/live/corretto/amazon-corretto-<version>-linux-x64
+#   export PATH="$JAVA_HOME/bin:$PATH"
+#
+# If other Java installs exist (e.g. /usr/lib/jvm/), you can use update-alternatives:
+#
+#   sudo update-alternatives --install /usr/bin/java java $JAVA_HOME/bin/java 1
+#   sudo update-alternatives --install /usr/bin/javac javac $JAVA_HOME/bin/javac 1
