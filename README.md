@@ -4,6 +4,8 @@
 
 apt-oob integrates with the standard apt upgrade process and runs automatically when `apt upgrade` or `apt-get upgrade` is invoked.
 
+This project is ai-assisted. I've been running it personally, on various systems, for a month or so to proof it out. The dev branch will be newer and less stable.
+
 ---
 
 ## Installation
