@@ -218,7 +218,15 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 
 ## conf.d File Format
 
-Configuration files are plain shell-sourceable key=value files. They are loaded in lexical order — numeric prefixes (`10-`, `20-`) control precedence. Each file configures one package.
+Configuration files are plain shell-sourceable key=value files. They are loaded in lexical order - numeric prefixes (`10-`, `20-`) control precedence. Each file configures one package.
+
+Files ending in `.disabled` are skipped. To disable a package without removing its config:
+
+```bash
+mv conf.d/40-bat conf.d/40-bat.disabled
+```
+
+Rename it back to re-enable.
 
 ### Built-in Variables
 
