@@ -1,3 +1,8 @@
 #!/bin/bash
-curl -sf 'https://product-details.mozilla.org/1.0/thunderbird_versions.json' \
-  | grep -oP '"LATEST_THUNDERBIRD_VERSION"\s*:\s*"\K[^"]+'
+# Get latest Thunderbird version from Mozilla (e.g. "138.0")
+
+VERSION=$(curl -sf 'https://product-details.mozilla.org/1.0/thunderbird_versions.json' \
+  | jq -r '.LATEST_THUNDERBIRD_VERSION')
+
+[ -z "$VERSION" ] && exit 1
+echo "$VERSION"

@@ -126,7 +126,7 @@ Logging uses syslog-style formatting:
 ```
 Mar 22 10:23:00 oob[12345]: [INFO] golang: installed 1.22.0
 Mar 22 10:23:01 oob[12345]: [WARN] firefox: CHECKSUM not set, skipping verification
-Mar 22 10:23:02 oob[12345]: [ERROR] minecraft: download failed
+Mar 22 10:23:02 oob[12345]: [ERROR] corretto: download failed
 ```
 
 ---
@@ -156,19 +156,28 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 ├── bin/
 │   └── oob                  # Main executable
 ├── conf.d/                  # Package configuration files (sourced in lexical order)
-│   ├── 10-golang
-│   └── 20-minecraft
+│   ├── 10-firefox
+│   ├── 20-thunderbird
+│   ├── 30-nextcloud-talk
+│   ├── 40-bat
+│   └── 50-golang
 ├── checkver/                # Version check scripts (print latest version string to stdout)
+│   ├── bat-check.sh
+│   ├── firefox-check.sh
 │   ├── golang-check.sh
-│   └── minecraft-check.sh
+│   ├── nextcloud-talk-check.sh
+│   └── thunderbird-check.sh
 ├── dload/                   # URL resolvers (receive version as $1, print URL to stdout)
-│   ├── golang-download.sh
-│   └── minecraft-download.sh
+│   ├── bat-download.sh
+│   └── nextcloud-talk-download.sh
 ├── checksum/                # Checksum scripts (print algo:hash to stdout)
-│   ├── golang-checksum.sh
-│   └── firefox-verify.sh
+│   ├── bat-verify.sh
+│   ├── firefox-verify.sh
+│   ├── golang-verify.sh
+│   ├── nextcloud-talk-verify.sh
+│   └── thunderbird-verify.sh
 ├── keys/                    # GPG public keys used for signature verification
-│   └── golang-signing.gpg
+│   └── firefox.gpg
 ├── live/                    # Extracted package installations
 │   └── golang/
 │       └── go/              # Extracted as-is from tarball, no renaming
@@ -248,41 +257,42 @@ The following variables are available for use in `DOWNLOAD`, `GPG_SIG_URL`, and 
 
 ### Reference
 
-```sh
-# conf.d/10-golang
+This example shows how you would configure Amazon Corretto 26 (not bundled, shown for illustration):
 
-# Package name — used for directory naming under live/ and state/
-NAME="golang"
+```sh
+# conf.d/60-corretto
+
+# Package name - used for directory naming under live/ and state/
+NAME="corretto"
 
 # Download source. Either:
-#   https:// URL — supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
-#   script name  — resolved under apt-oob/dload/, receives latest version as $1, prints URL to stdout
-DOWNLOAD="golang-download.sh"
-# or: DOWNLOAD="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz"
+#   https:// URL - supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
+#   script name  - resolved under apt-oob/dload/, receives latest version as $1, prints URL to stdout
+DOWNLOAD="https://corretto.aws/downloads/resources/{VERSION}/amazon-corretto-{VERSION}-linux-x64.tar.gz"
 
 # Checksum method. Either:
-#   none         — skip verification entirely for this package
-#   script name  — resolved under apt-oob/checksum/, receives version as $1,
+#   none         - skip verification entirely for this package
+#   script name  - resolved under apt-oob/checksum/, receives version as $1,
 #                  must print "algo:hash" to stdout (e.g. sha256:abc123...) and exit 0
-CHECKSUM="golang-verify.sh"
+CHECKSUM="corretto-verify.sh"
 # or: CHECKSUM="none"
 
 # GPG public key filename under apt-oob/keys/ (optional)
 # If set, oob imports the key into a temporary keyring and verifies the detached
 # signature (fetched from GPG_SIG_URL) against the downloaded archive.
 # The system GPG keyring is never touched.
-#GPG_KEY="golang-signing.gpg"
+#GPG_KEY="corretto.gpg"
 
 # URL to fetch the detached GPG signature file (used when GPG_KEY is set)
 # Supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
-#GPG_SIG_URL="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz.asc"
+#GPG_SIG_URL="https://corretto.aws/downloads/resources/{VERSION}/amazon-corretto-{VERSION}-linux-x64.tar.gz.sig"
 
 # Version check script under apt-oob/checkver/
 # Must print the latest available version string to stdout and exit 0 on success
-VERSION_CHECK="golang-check.sh"
+VERSION_CHECK="corretto-check.sh"
 
 # Base directory to extract the package archive into
-# The tarball is extracted as-is — no renaming or stripping of top-level directories
+# The tarball is extracted as-is - no renaming or stripping of top-level directories
 # Actual install path is recorded in state after extraction
 # OOB_LIVE is a built-in variable set to /usr/local/apt-oob/live
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
@@ -291,11 +301,31 @@ INSTALL_DIR="${OOB_LIVE}/${NAME}"
 # Format: "linkname:path_relative_to_INSTALL_DIR"
 # Multiple entries separated by | (pipe)
 # Path must include the top-level directory the tarball extracts to
-SYMLINKS="go:go/bin/go|gofmt:go/bin/gofmt"
+SYMLINKS="java:amazon-corretto-{VERSION}-linux-x64/bin/java|javac:amazon-corretto-{VERSION}-linux-x64/bin/javac"
 
 # Directory in which symlinks are created
 SYMLINK_DIR="/usr/local/bin"
 ```
+
+The corresponding scripts would be:
+
+- `checkver/corretto-check.sh` - queries the GitHub API for the latest `corretto/corretto-26` release tag
+- `checksum/corretto-verify.sh` - fetches the sha256 from `https://corretto.aws/downloads/latest_sha256/amazon-corretto-26-x64-linux-jdk.tar.gz`
+
+### Bundled Packages
+
+The following packages are included out of the box:
+
+| Package | conf.d | Download | Checksum | GPG |
+|---|---|---|---|---|
+| Firefox | `10-firefox` | URL template | `firefox-verify.sh` | `firefox.gpg` |
+| Thunderbird | `20-thunderbird` | URL template | `thunderbird-verify.sh` | `firefox.gpg` |
+| Nextcloud Talk | `30-nextcloud-talk` | `nextcloud-talk-download.sh` | `nextcloud-talk-verify.sh` | - |
+| bat | `40-bat` | `bat-download.sh` | `bat-verify.sh` | - |
+| Go | `50-golang` | URL template | `golang-verify.sh` | - |
+| Corretto 26 | `60-corretto` | URL template | `corretto-verify.sh` | - |
+
+Note: The Corretto checksum endpoint (`corretto.aws/downloads/latest_sha256/`) returns the hash for the latest release, not a specific version. This is fine because oob only checksums the version it just fetched from checkver, which is always the latest. If Corretto ships a new release between the checkver and checksum calls, there is a small race window where the hash could mismatch. In practice this is unlikely.
 
 ---
 

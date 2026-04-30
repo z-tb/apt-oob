@@ -1,0 +1,7 @@
+NAME="corretto"
+DOWNLOAD="https://corretto.aws/downloads/resources/{VERSION}/amazon-corretto-{VERSION}-linux-x64.tar.gz"
+CHECKSUM="corretto-verify.sh"
+VERSION_CHECK="corretto-check.sh"
+INSTALL_DIR="${OOB_LIVE}/${NAME}"
+SYMLINKS="java:amazon-corretto-{VERSION}-linux-x64/bin/java|javac:amazon-corretto-{VERSION}-linux-x64/bin/javac"
+SYMLINK_DIR="/usr/local/bin"

@@ -1,16 +1,13 @@
 #!/bin/bash
+# Get the sha256 checksum for a Go linux/amd64 release tarball.
+# Usage: golang-verify.sh <version>
+# Output: sha256:<hash>
+
 VERSION="$1"
 [ -z "$VERSION" ] && exit 1
-HASH=$(curl -sf 'https://go.dev/dl/?mode=json' | python3 -c "
-import json,sys
-data=json.load(sys.stdin)
-for r in data:
-    if r['version'] == 'go${VERSION}':
-        for f in r['files']:
-            if f['os']=='linux' and f['arch']=='amd64' and f['kind']=='archive':
-                print(f['sha256'])
-                break
-        break
-")
+
+# The Go download page provides a known checksum file for each release
+HASH=$(curl -sf "https://dl.google.com/go/go${VERSION}.linux-amd64.tar.gz.sha256")
+
 [ -z "$HASH" ] && exit 1
 echo "sha256:${HASH}"

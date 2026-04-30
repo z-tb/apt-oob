@@ -1,5 +1,8 @@
 #!/bin/bash
+# Get latest bat version from GitHub (e.g. "0.25.0")
+
 TAG=$(curl -sf "https://api.github.com/repos/sharkdp/bat/releases/latest" \
-  | grep -oP '"tag_name"\s*:\s*"\Kv[^"]+')
+  | jq -r '.tag_name')
+
 [ -z "$TAG" ] && exit 1
 echo "${TAG#v}"
