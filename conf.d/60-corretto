@@ -15,8 +15,12 @@ SYMLINK_DIR="/usr/local/bin"
 #
 # Uncomment the following to register corretto with update-alternatives.
 # This is the standard Debian way to manage multiple Java installs.
-# Only one version exists under INSTALL_DIR at a time (oob cleans before extracting).
-JAVA_HOME=$(echo "${INSTALL_DIR}"/amazon-corretto-*-linux-x64)
-update-alternatives --install /usr/bin/java java "${JAVA_HOME}/bin/java" 1
-update-alternatives --install /usr/bin/javac javac "${JAVA_HOME}/bin/javac" 1
-echo "export JAVA_HOME=${JAVA_HOME}" > /etc/profile.d/java-home.sh
+# Run these manually after 'oob install corretto' completes:
+#
+#   JAVA_HOME=$(echo /usr/local/apt-oob/live/corretto/amazon-corretto-*-linux-x64)
+#   update-alternatives --install /usr/bin/java java "${JAVA_HOME}/bin/java" 1
+#   update-alternatives --install /usr/bin/javac javac "${JAVA_HOME}/bin/javac" 1
+#   echo "export JAVA_HOME=${JAVA_HOME}" > /etc/profile.d/java-home.sh
+#
+# If another Java is already installed, select corretto as the active one:
+#   update-alternatives --config java
