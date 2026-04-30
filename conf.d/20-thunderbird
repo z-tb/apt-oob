@@ -1,9 +1,13 @@
 NAME="thunderbird"
 DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/thunderbird/releases/{VERSION}/linux-x86_64/en-US/thunderbird-{VERSION}.tar.xz"
 CHECKSUM="thunderbird-verify.sh"
-GPG_KEY="firefox.gpg"
-GPG_SIG_URL="https://releases.mozilla.org/pub/thunderbird/releases/{VERSION}/SHA512SUMS.asc"
 VERSION_CHECK="thunderbird-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="thunderbird:thunderbird/thunderbird"
 SYMLINK_DIR="/usr/local/bin"
+
+# GPG signature verification (optional). Uses the same Mozilla key as Firefox. To enable:
+#   curl -o /usr/local/apt-oob/keys/firefox.gpg https://archive.mozilla.org/pub/firefox/releases/latest/KEY
+# Then uncomment:
+#GPG_KEY="firefox.gpg"
+#GPG_SIG_URL="https://releases.mozilla.org/pub/thunderbird/releases/{VERSION}/SHA512SUMS.asc"

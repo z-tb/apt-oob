@@ -178,8 +178,7 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 │   ├── golang-verify.sh
 │   ├── nextcloud-talk-verify.sh
 │   └── thunderbird-verify.sh
-├── keys/                    # GPG public keys used for signature verification
-│   └── firefox.gpg
+├── keys/                    # GPG public keys (user-provided, see conf.d comments)
 ├── live/                    # Extracted package installations
 │   └── golang/
 │       └── go/              # Extracted as-is from tarball, no renaming
@@ -328,8 +327,8 @@ The following packages are included out of the box:
 
 | Package | conf.d | Download | Checksum | GPG |
 |---|---|---|---|---|
-| Firefox | `10-firefox` | URL template | `firefox-verify.sh` | `firefox.gpg` |
-| Thunderbird | `20-thunderbird` | URL template | `thunderbird-verify.sh` | `firefox.gpg` |
+| Firefox | `10-firefox` | URL template | `firefox-verify.sh` | opt-in |
+| Thunderbird | `20-thunderbird` | URL template | `thunderbird-verify.sh` | opt-in |
 | Nextcloud Talk | `30-nextcloud-talk` | `nextcloud-talk-download.sh` | `nextcloud-talk-verify.sh` | - |
 | bat | `40-bat` | `bat-download.sh` | `bat-verify.sh` | - |
 | Go | `50-golang` | URL template | `golang-verify.sh` | - |
@@ -407,3 +406,5 @@ If `GPG_KEY` is not set, GPG verification is skipped (a warning is logged but no
 ## keys/
 
 GPG public key files used for signature verification. Referenced by filename in `GPG_KEY`. `oob` imports the key into a temporary keyring at verify time. The system GPG keyring is never read from or written to.
+
+Users should download keys from official sources and place them here. See the comments in each conf.d file for download instructions.
