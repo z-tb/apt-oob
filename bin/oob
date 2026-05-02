@@ -1014,7 +1014,14 @@ cmd_remove() {
 cmd_list() {
     for conf_file in "${OOB_CONF}"/*; do
         [[ -f "$conf_file" ]] || continue
-        [[ "$conf_file" == *.disabled ]] && continue
+        if [[ "$conf_file" == *.disabled ]]; then
+            local dname
+            dname=$(basename "$conf_file" .disabled)
+            # Strip numeric prefix (e.g. "40-bat" -> "bat")
+            dname="${dname#*-}"
+            warn "${dname}: disabled"
+            continue
+        fi
         _reset_conf
         # shellcheck disable=SC1090
         source "$conf_file"

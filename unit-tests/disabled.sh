@@ -12,12 +12,12 @@ FLAG_QUIET=0
 output=$(cmd_list 2>&1)
 FLAG_QUIET=1
 assert_contains "$output" "active" "active package listed"
-# Verify disabled package is not in output
-if echo "$output" | grep -q "skipped"; then
-    TEST_FAIL=$((TEST_FAIL + 1))
-    echo "  FAIL: disabled package should not appear in list"
-else
+# Verify disabled package appears as disabled
+if echo "$output" | grep -q "skipped.*disabled"; then
     TEST_PASS=$((TEST_PASS + 1))
+else
+    TEST_FAIL=$((TEST_FAIL + 1))
+    echo "  FAIL: disabled package should appear as disabled in list"
 fi
 
 # find_conf_by_name should not find the disabled package
