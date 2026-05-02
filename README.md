@@ -257,10 +257,10 @@ The following variables are available for use in `DOWNLOAD`, `GPG_SIG_URL`, and 
 
 | Variable | Description |
 |---|---|
-| `{VERSION}` | Full version string e.g. `1.21.6` |
-| `{MAJOR}` | Major component e.g. `1` |
-| `{MINOR}` | Minor component e.g. `21` |
-| `{REVISION}` | Revision component e.g. `6` |
+| `%VERSION%` | Full version string e.g. `1.21.6` |
+| `%MAJOR%` | Major component e.g. `1` |
+| `%MINOR%` | Minor component e.g. `21` |
+| `%REVISION%` | Revision component e.g. `6` |
 
 ---
 
@@ -275,9 +275,9 @@ This example shows how you would configure Amazon Corretto 26 (not bundled, show
 NAME="corretto"
 
 # Download source. Either:
-#   https:// URL - supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
+#   https:// URL - supports %VERSION% %MAJOR% %MINOR% %REVISION% template variables
 #   script name  - resolved under apt-oob/dload/, receives latest version as $1, prints URL to stdout
-DOWNLOAD="https://corretto.aws/downloads/resources/{VERSION}/amazon-corretto-{VERSION}-linux-x64.tar.gz"
+DOWNLOAD="https://corretto.aws/downloads/resources/%VERSION%/amazon-corretto-%VERSION%-linux-x64.tar.gz"
 
 # Checksum method. Either:
 #   none         - skip verification entirely for this package
@@ -293,8 +293,8 @@ CHECKSUM="corretto-verify.sh"
 #GPG_KEY="corretto.gpg"
 
 # URL to fetch the detached GPG signature file (used when GPG_KEY is set)
-# Supports {VERSION} {MAJOR} {MINOR} {REVISION} template variables
-#GPG_SIG_URL="https://corretto.aws/downloads/resources/{VERSION}/amazon-corretto-{VERSION}-linux-x64.tar.gz.sig"
+# Supports %VERSION% %MAJOR% %MINOR% %REVISION% template variables
+#GPG_SIG_URL="https://corretto.aws/downloads/resources/%VERSION%/amazon-corretto-%VERSION%-linux-x64.tar.gz.sig"
 
 # Version check script under apt-oob/checkver/
 # Must print the latest available version string to stdout and exit 0 on success
@@ -310,7 +310,7 @@ INSTALL_DIR="${OOB_LIVE}/${NAME}"
 # Format: "linkname:path_relative_to_INSTALL_DIR"
 # Multiple entries separated by | (pipe)
 # Path must include the top-level directory the tarball extracts to
-SYMLINKS="java:amazon-corretto-{VERSION}-linux-x64/bin/java|javac:amazon-corretto-{VERSION}-linux-x64/bin/javac"
+SYMLINKS="java:amazon-corretto-%VERSION%-linux-x64/bin/java|javac:amazon-corretto-%VERSION%-linux-x64/bin/javac"
 
 # Directory in which symlinks are created
 SYMLINK_DIR="/usr/local/bin"

@@ -210,16 +210,16 @@ Current package name (available after NAME= is defined in the conf file)
 .SS Template Variables
 Substituted at runtime using the version string from VERSION_CHECK. Available in DOWNLOAD, GPG_SIG_URL, and SYMLINKS:
 .TP
-.B {VERSION}
+.B %VERSION%
 Full version string (e.g. 1.21.6)
 .TP
-.B {MAJOR}
+.B %MAJOR%
 Major component (e.g. 1)
 .TP
-.B {MINOR}
+.B %MINOR%
 Minor component (e.g. 21)
 .TP
-.B {REVISION}
+.B %REVISION%
 Revision component (e.g. 6)
 .SS Fields
 .TP
@@ -228,7 +228,7 @@ Package name. Used for directory naming under live/ and state/.
 .TP
 .B DOWNLOAD
 Download source. Either an https:// URL supporting template variables
-.RI ( {VERSION} ", " {MAJOR} ", " {MINOR} ", " {REVISION} )
+.RI ( %VERSION% ", " %MAJOR% ", " %MINOR% ", " %REVISION% )
 or a script name resolved under dload/.
 .TP
 .B CHECKSUM
@@ -257,7 +257,7 @@ Base directory to extract the archive into. Typically
 .B SYMLINKS
 Pipe-separated list of symlinks in
 .I linkname:relative_path
-format. Pipe delimiter allows paths with spaces. Supports {VERSION} template
+format. Pipe delimiter allows paths with spaces. Supports %VERSION% template
 variables in relative paths. Optional; omit if no symlinks needed.
 .TP
 .B SYMLINK_DIR

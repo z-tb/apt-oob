@@ -30,8 +30,8 @@
 - [ ] Reset conf variables between packages to avoid bleed
 
 ## 5. Helper: template variable substitution
-- [ ] expand_template() — given a version string and a URL, replace {VERSION}, {MAJOR}, {MINOR}, {REVISION}
-- [ ] Handle 2-component versions (e.g. 148.0) — {REVISION} becomes empty string
+- [ ] expand_template() - given a version string and a URL, replace %VERSION%, %MAJOR%, %MINOR%, %REVISION%
+- [ ] Handle 2-component versions (e.g. 148.0) - %REVISION% becomes empty string
 
 ## 6. Helper: resolve download URL
 - [ ] If DOWNLOAD starts with https://, expand template variables

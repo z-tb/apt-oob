@@ -310,10 +310,10 @@ expand_template() {
     minor="${minor:-}"
     revision="${revision:-}"
 
-    url="${url//\{VERSION\}/$version}"
-    url="${url//\{MAJOR\}/$major}"
-    url="${url//\{MINOR\}/$minor}"
-    url="${url//\{REVISION\}/$revision}"
+    url="${url//%VERSION%/$version}"
+    url="${url//%MAJOR%/$major}"
+    url="${url//%MINOR%/$minor}"
+    url="${url//%REVISION%/$revision}"
     echo "$url"
 }
 
@@ -1151,11 +1151,14 @@ CONF
             info "would write example firefox config to ${OOB_CONF}/10-firefox"
         else
             cat > "${OOB_CONF}/10-firefox" <<'CONF'
+# This file is sourced by oob. Shell variables (${VAR}) expand at load time.
+# %WORD% are template variables. See oob(1) for details.
+
 NAME="firefox"
-DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/{VERSION}/linux-x86_64/en-US/firefox-{VERSION}.tar.xz"
+DOWNLOAD="https://download-installer.cdn.mozilla.net/pub/firefox/releases/%VERSION%/linux-x86_64/en-US/firefox-%VERSION%.tar.xz"
 CHECKSUM="firefox-verify.sh"
 GPG_KEY="firefox.gpg"
-GPG_SIG_URL="https://releases.mozilla.org/pub/firefox/releases/{VERSION}/SHA512SUMS.asc"
+GPG_SIG_URL="https://releases.mozilla.org/pub/firefox/releases/%VERSION%/SHA512SUMS.asc"
 VERSION_CHECK="firefox-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="firefox:firefox/firefox"

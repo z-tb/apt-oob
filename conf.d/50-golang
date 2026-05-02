@@ -1,5 +1,8 @@
+# This file is sourced by oob. Shell variables (${VAR}) expand at load time.
+# %WORD% are template variables. See oob(1) for details.
+
 NAME="golang"
-DOWNLOAD="https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz"
+DOWNLOAD="https://go.dev/dl/go%VERSION%.linux-amd64.tar.gz"
 CHECKSUM="golang-verify.sh"
 VERSION_CHECK="golang-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${NAME}"

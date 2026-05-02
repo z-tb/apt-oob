@@ -1,4 +1,5 @@
 #!/bin/bash
+# Called by oob. Print latest version string to stdout and exit 0.
 # Get latest Firefox version from Mozilla (e.g. "138.0")
 
 VERSION=$(curl -sf 'https://product-details.mozilla.org/1.0/firefox_versions.json' \

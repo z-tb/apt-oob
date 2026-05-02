@@ -135,7 +135,7 @@ create_test_conf() {
     local name="${1:-testpkg}"
     cat > "${OOB_CONF}/${name}" <<EOF
 NAME="${name}"
-DOWNLOAD="https://example.com/${name}/{VERSION}.tar.gz"
+DOWNLOAD="https://example.com/${name}/%VERSION%.tar.gz"
 CHECKSUM="none"
 VERSION_CHECK="${name}-check.sh"
 INSTALL_DIR="${OOB_LIVE}/${name}"

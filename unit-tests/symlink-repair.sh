@@ -13,11 +13,11 @@ mkdir -p "$SYMLINK_DIR"
 # Conf.d with relative path including version template
 cat > "${OOB_CONF}/10-mypkg" <<EOF
 NAME="mypkg"
-DOWNLOAD="https://example.com/{VERSION}.tar.gz"
+DOWNLOAD="https://example.com/%VERSION%.tar.gz"
 CHECKSUM="none"
 VERSION_CHECK="mypkg-check.sh"
 INSTALL_DIR="${OOB_LIVE}/mypkg"
-SYMLINKS="myapp:app-v{VERSION}/bin/myapp"
+SYMLINKS="myapp:app-v%VERSION%/bin/myapp"
 SYMLINK_DIR="${SYMLINK_DIR}"
 EOF
 

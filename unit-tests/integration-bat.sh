@@ -44,7 +44,7 @@ DOWNLOAD="bat-download.sh"
 CHECKSUM="bat-verify.sh"
 VERSION_CHECK="bat-check.sh"
 INSTALL_DIR="${OOB_LIVE}/bat"
-SYMLINKS="bat:bat-v{VERSION}-x86_64-unknown-linux-gnu/bat"
+SYMLINKS="bat:bat-v%VERSION%-x86_64-unknown-linux-gnu/bat"
 SYMLINK_DIR="${TEST_TMPDIR}/bin"
 EOF
 
