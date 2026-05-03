@@ -554,7 +554,7 @@ remove_symlinks() {
                 info "would remove symlink ${linkpath}"
             else
                 rm -f "$linkpath"
-                (( FLAG_VERBOSE )) && info "removed symlink ${linkpath}"
+                info "removed symlink ${linkpath}"
             fi
         fi
     done
@@ -1063,7 +1063,7 @@ cmd_remove() {
     # Remove installed files
     spin_start "${TARGET_NAME}: removing"
     if [[ -d "$INSTALL_PATH" ]]; then
-        rm -rf "$INSTALL_PATH"
+        rm -rf "$INSTALL_PATH" || warn "${TARGET_NAME}: failed to remove ${INSTALL_PATH}"
         info "${TARGET_NAME}: removed ${INSTALL_PATH}"
     fi
 
@@ -1072,7 +1072,7 @@ cmd_remove() {
     if conf_file=$(find_conf_by_name "$TARGET_NAME" 2>/dev/null); then
         load_conf "$conf_file" 2>/dev/null || true
         if [[ -d "$INSTALL_DIR" && "$INSTALL_DIR" != "$INSTALL_PATH" ]]; then
-            rm -rf "$INSTALL_DIR"
+            rm -rf "$INSTALL_DIR" || warn "${TARGET_NAME}: failed to remove ${INSTALL_DIR}"
             info "${TARGET_NAME}: removed ${INSTALL_DIR}"
         fi
     fi
@@ -1085,8 +1085,9 @@ cmd_remove() {
     fi
     spin_stop
 
-    # Remove state
+    # Always remove state and disable, even if file removal had issues
     rm -f "${OOB_STATE}/${TARGET_NAME}"
+    info "${TARGET_NAME}: removed state"
 
     # Disable the package so it won't be upgraded again
     cmd_disable 2>/dev/null || true
