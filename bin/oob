@@ -109,7 +109,7 @@ fmt_print() {
     msg="${msg//\{MAGENTA\}/$C_MAGENTA}"
     msg="${msg//\{WHITE\}/$C_WHITE}"
     msg="${msg//\{RESET\}/$C_RESET}"
-    printf "%b\n" "$msg"
+    printf "%b${C_RESET}\n" "$msg"
 }
 
 # --- Spinner (dot bounce) ---
@@ -181,16 +181,19 @@ show_help() {
 usage: oob <command> [name] [flags]
 
 commands:
-  install [name]     Install/update all configured packages, or a single package
-  check [name]       Check available versions without installing
+  update [name]      Check available versions without installing
+  upgrade            Download and install all available updates
+  install <name>     Install or update a single package
   remove <name>      Remove installed files, symlinks, and state for a package
   list               List all configured packages and their installed versions
-  status <name>      Show detailed state and check for updates
+  status [name]      Show system health, or detailed state for a single package
+  enable <name>      Enable a disabled package
+  disable <name>     Disable a package (skip during upgrade)
   init               Create directory structure and install apt hook
   deinit             Remove the apt post-invoke hook
 
 flags:
-  -f, --force        install: reinstall regardless of version. remove: skip prompt
+  -f, --force        install/upgrade: reinstall regardless of version. remove: skip prompt
   -n, --dry-run      Show what would happen without making changes
   -v, --verbose      Increase terminal output detail
   -q, --quiet        Suppress terminal output; log to file only
@@ -214,7 +217,7 @@ parse_args() {
             -t|--terse)   FLAG_TERSE=1 ;;
             -h|--help)    show_help; exit 0 ;;
             --version|-V) echo "oob ${OOB_VERSION}"; exit 0 ;;
-            install|check|remove|list|status|init|deinit)
+            update|upgrade|install|remove|list|status|enable|disable|init|deinit)
                 COMMAND="$1"
                 ;;
             *)
@@ -230,7 +233,7 @@ parse_args() {
     done
 
     if [[ -z "$COMMAND" ]]; then
-        error "usage: oob <install|check|remove|list|status|init|deinit> [name] [flags]"
+        error "usage: oob <update|upgrade|install|remove|list|status|enable|disable|init|deinit> [name] [flags]"
         exit 1
     fi
 }
@@ -842,24 +845,28 @@ cmd_install_package() {
 }
 
 cmd_install() {
-    if [[ -n "$TARGET_NAME" ]]; then
-        local conf_file
-        conf_file=$(find_conf_by_name "$TARGET_NAME") || {
-            error "no configuration found for package: ${TARGET_NAME}"
-            return 1
-        }
-        cmd_install_package "$conf_file" || true
-    else
-        for conf_file in "${OOB_CONF}"/*; do
-            [[ -f "$conf_file" ]] || continue
-            [[ "$conf_file" == *.disabled ]] && continue
-            cmd_install_package "$conf_file" || true
-        done
+    if [[ -z "$TARGET_NAME" ]]; then
+        error "usage: oob install <name>"
+        return 1
     fi
+    local conf_file
+    conf_file=$(find_conf_by_name "$TARGET_NAME") || {
+        error "no configuration found for package: ${TARGET_NAME}"
+        return 1
+    }
+    cmd_install_package "$conf_file" || true
 }
 
-# --- Command: check ---
-cmd_check() {
+cmd_upgrade() {
+    for conf_file in "${OOB_CONF}"/*; do
+        [[ -f "$conf_file" ]] || continue
+        [[ "$conf_file" == *.disabled ]] && continue
+        cmd_install_package "$conf_file" || true
+    done
+}
+
+# --- Command: update ---
+cmd_update() {
     local confs=()
     local count_uptodate=0
     local count_updates=0
@@ -916,12 +923,86 @@ cmd_check() {
         (( count_notinstalled > 0 )) && parts+=("${count_notinstalled} not installed")
         local summary
         summary=$(IFS=', '; echo "${parts[*]}")
-        warn "${summary}. Run 'oob install' to install/update."
+        warn "${summary}. Run 'oob upgrade' to install/update."
     else
         fmt_print "INFO" "{CYAN}all packages up to date."
     fi
 }
 
+
+# --- Command: enable ---
+cmd_enable() {
+    if [[ -z "$TARGET_NAME" ]]; then
+        error "usage: oob enable <name>"
+        return 1
+    fi
+
+    # Check if already enabled
+    for f in "${OOB_CONF}"/*; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *.disabled ]] && continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$f"
+        if [[ "$NAME" == "$TARGET_NAME" ]]; then
+            info "${TARGET_NAME}: already enabled"
+            return 0
+        fi
+    done
+
+    # Look for disabled version
+    for f in "${OOB_CONF}"/*.disabled; do
+        [[ -f "$f" ]] || continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$f"
+        if [[ "$NAME" == "$TARGET_NAME" ]]; then
+            mv "$f" "${f%.disabled}"
+            success "${TARGET_NAME}: enabled"
+            return 0
+        fi
+    done
+
+    error "no configuration found for package: ${TARGET_NAME}"
+    return 1
+}
+
+# --- Command: disable ---
+cmd_disable() {
+    if [[ -z "$TARGET_NAME" ]]; then
+        error "usage: oob disable <name>"
+        return 1
+    fi
+
+    # Check if already disabled
+    for f in "${OOB_CONF}"/*.disabled; do
+        [[ -f "$f" ]] || continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$f"
+        if [[ "$NAME" == "$TARGET_NAME" ]]; then
+            info "${TARGET_NAME}: already disabled"
+            return 0
+        fi
+    done
+
+    # Look for enabled version
+    for f in "${OOB_CONF}"/*; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *.disabled ]] && continue
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$f"
+        if [[ "$NAME" == "$TARGET_NAME" ]]; then
+            mv "$f" "${f}.disabled"
+            success "${TARGET_NAME}: disabled"
+            return 0
+        fi
+    done
+
+    error "no configuration found for package: ${TARGET_NAME}"
+    return 1
+}
 
 # --- Command: remove ---
 cmd_remove() {
@@ -1007,6 +1088,9 @@ cmd_remove() {
     # Remove state
     rm -f "${OOB_STATE}/${TARGET_NAME}"
 
+    # Disable the package so it won't be upgraded again
+    cmd_disable 2>/dev/null || true
+
     fmt_print "INFO" "${TARGET_NAME}: {GREEN}removed"
 }
 
@@ -1047,10 +1131,111 @@ cmd_list() {
 
 # --- Command: status ---
 cmd_status() {
-    if [[ -z "$TARGET_NAME" ]]; then
-        error "usage: oob status <name>"
-        return 1
+    if [[ -n "$TARGET_NAME" ]]; then
+        _cmd_status_package
+        return $?
     fi
+
+    # System-wide health check
+    local count_enabled=0 count_disabled=0 count_installed=0
+    local count_updates=0 count_notinstalled=0 count_broken_symlinks=0
+    local pkg_lines=()
+
+    # APT hook
+    if [[ -f "$APT_HOOK" ]]; then
+        info "apt hook:    installed"
+    else
+        warn "apt hook:    not installed"
+    fi
+
+    # Iterate all configs
+    for conf_file in "${OOB_CONF}"/*; do
+        [[ -f "$conf_file" ]] || continue
+
+        if [[ "$conf_file" == *.disabled ]]; then
+            count_disabled=$((count_disabled + 1))
+            local dname
+            dname=$(basename "$conf_file" .disabled)
+            dname="${dname#*-}"
+            pkg_lines+=("$(printf "  %-16s disabled" "$dname")")
+            continue
+        fi
+
+        count_enabled=$((count_enabled + 1))
+        _reset_conf
+        # shellcheck disable=SC1090
+        source "$conf_file"
+        [[ -z "$NAME" ]] && continue
+
+        if read_state "$NAME"; then
+            count_installed=$((count_installed + 1))
+
+            # Check symlinks
+            local broken
+            broken=$(check_symlinks "$NAME" "$STATE_SYMLINKS" 0 2>&1 | grep -c "broken\|missing" || true)
+
+            # Version check
+            local available
+            available=$(run_version_check "$NAME" "$VERSION_CHECK" 2>/dev/null) || true
+
+            # Determine color and suffix based on state
+            local color suffix=""
+            check_integrity "$NAME" "${OOB_LIVE}/${NAME}"
+
+            if [[ "$INTEGRITY" == "stale_state" ]]; then
+                color="{RED}"
+                suffix="files missing"
+            elif (( broken > 0 )); then
+                count_broken_symlinks=$((count_broken_symlinks + broken))
+                color="{RED}"
+                suffix="symlink broken"
+            elif [[ -n "$available" && "$available" != "$INSTALLED_VERSION" ]]; then
+                count_updates=$((count_updates + 1))
+                color="{MAGENTA}"
+                suffix="update available (${available})"
+            else
+                color="{GREEN}"
+                suffix="up to date"
+            fi
+
+            pkg_lines+=("$(printf "  ${color}%-16s %-12s %s" "$NAME" "$INSTALLED_VERSION" "$suffix")")
+        else
+            # Check for orphaned install
+            check_integrity "$NAME" "${OOB_LIVE}/${NAME}"
+            if [[ "$INTEGRITY" == "orphaned" ]]; then
+                count_notinstalled=$((count_notinstalled + 1))
+                pkg_lines+=("$(printf "  {RED}%-16s orphaned (no state)" "$NAME")")
+            else
+                count_notinstalled=$((count_notinstalled + 1))
+                pkg_lines+=("$(printf "  {YELLOW}%-16s not installed" "$NAME")")
+            fi
+        fi
+    done
+
+    # Summary
+    info "packages:    ${count_enabled} enabled, ${count_disabled} disabled"
+    if (( count_installed > 0 )); then
+        info "installed:   ${count_installed}"
+    fi
+    if (( count_updates > 0 )); then
+        warn "updates:     ${count_updates} available"
+    fi
+    if (( count_notinstalled > 0 )); then
+        info "not installed: ${count_notinstalled}"
+    fi
+    if (( count_broken_symlinks > 0 )); then
+        warn "symlinks:    ${count_broken_symlinks} broken"
+    elif (( count_installed > 0 )); then
+        info "symlinks:    OK"
+    fi
+
+    echo ""
+    for line in "${pkg_lines[@]}"; do
+        fmt_print "INFO" "$line"
+    done
+}
+
+_cmd_status_package() {
 
     local conf_file
     conf_file=$(find_conf_by_name "$TARGET_NAME") || {
@@ -1216,9 +1401,9 @@ SCRIPT
     cat > "$APT_HOOK" <<'EOF'
 # /etc/apt/apt.conf.d/99-apt-oob
 # Check for oob updates after apt update
-APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check --terse; fi";};
+APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob update --terse; fi";};
 # Install oob updates after apt upgrade/full-upgrade
-DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install --terse; fi";};
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob upgrade --terse; fi";};
 EOF
 
     success "apt hook installed: ${APT_HOOK}"
@@ -1256,11 +1441,14 @@ main() {
     touch "$LOG_FILE" 2>/dev/null || true
 
     case "$COMMAND" in
+        update)  cmd_update ;;
+        upgrade) cmd_upgrade ;;
         install) cmd_install ;;
-        check)   cmd_check ;;
         remove)  cmd_remove ;;
         list)    cmd_list ;;
         status)  cmd_status ;;
+        enable)  cmd_enable ;;
+        disable) cmd_disable ;;
         init)    cmd_init ;;
         deinit)  cmd_deinit ;;
     esac

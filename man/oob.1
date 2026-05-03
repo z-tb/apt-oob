@@ -19,9 +19,12 @@ or
 .BR apt\-get\ upgrade (8).
 .SH COMMANDS
 .TP
-.BI install " [name]"
-Install or update all configured packages, or a single package by
-.IR name .
+.BI update " [name]"
+Check available versions without downloading or installing.
+Prints installed and available versions for each package.
+.TP
+.B upgrade
+Download and install all available updates for enabled packages.
 Downloads the archive to a temporary directory, verifies checksum and
 signature if configured, removes the old install directory, extracts,
 creates symlinks, and writes the state file. A verification summary line
@@ -30,14 +33,15 @@ extracted files have restrictive permissions, they are fixed automatically.
 Per-package failures are logged and skipped; remaining packages still
 get a chance to update.
 .TP
-.BI check " [name]"
-Check available versions without downloading or installing.
-Prints installed and available versions for each package.
+.BI install " name"
+Install or update a single package by
+.IR name .
 .TP
 .BI remove " name"
 Remove installed files from
 .IR live/ ,
-symlinks, and the state file for a package.
+symlinks, and the state file for a package. Also disables the package
+config (renames to .disabled) to prevent reinstallation on next upgrade.
 Prompts y/n before proceeding unless
 .B \-\-force
 is specified.
@@ -45,11 +49,26 @@ is specified.
 .B list
 List all configured packages and their installed versions.
 Packages with a conf.d entry but no state file are shown as
-"configured, not installed".
+"configured, not installed". Disabled packages are shown as "disabled".
 .TP
-.BI status " name"
-Show the state file contents for a package and run the version check
+.BI status " [name]"
+With no arguments, show a system-wide health summary including apt hook
+status, enabled/disabled package counts, update availability, and symlink
+health. With a package
+.IR name ,
+show the state file contents for that package and run the version check
 script to report whether an update is available.
+.TP
+.BI enable " name"
+Enable a disabled package by renaming its config from .disabled back
+to the original name.
+.TP
+.BI disable " name"
+Disable a package by appending .disabled to its config filename.
+Disabled packages are skipped by
+.B upgrade
+and
+.BR update .
 .TP
 .B init
 Create the directory structure under
@@ -72,7 +91,7 @@ Remove the apt post\-invoke hook file.
 .TP
 .BR \-f ", " \-\-force
 For
-.BR install :
+.BR install / upgrade :
 re-download and reinstall regardless of installed version.
 For
 .BR remove :
@@ -162,12 +181,12 @@ in
 APT hook file. Contains two hooks:
 .B APT::Update::Post\-Invoke\-Success
 runs
-.B oob check
+.B oob update
 after
 .BR "apt update" ;
 .B DPkg::Post\-Invoke
 runs
-.B oob install
+.B oob upgrade
 after
 .BR "apt upgrade" " or " "apt full\-upgrade" .
 Written by
@@ -277,16 +296,22 @@ is removed and the package is treated as not installed. If the install
 directory exists but no state file is found (orphaned install), a warning
 is printed.
 .SH EXAMPLES
-Install all configured packages:
+Upgrade all enabled packages:
 .PP
 .RS
-.B oob install
+.B oob upgrade
 .RE
 .PP
 Check for updates without installing:
 .PP
 .RS
-.B oob check
+.B oob update
+.RE
+.PP
+Install a single package:
+.PP
+.RS
+.B oob install golang
 .RE
 .PP
 Force reinstall a single package:
@@ -295,10 +320,22 @@ Force reinstall a single package:
 .B oob install golang \-f
 .RE
 .PP
-Remove a package:
+Remove a package (also disables it):
 .PP
 .RS
 .B oob remove firefox
+.RE
+.PP
+Disable a package without removing it:
+.PP
+.RS
+.B oob disable corretto
+.RE
+.PP
+Re-enable a disabled package:
+.PP
+.RS
+.B oob enable corretto
 .RE
 .PP
 Set up the apt hook:

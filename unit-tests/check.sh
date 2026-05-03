@@ -20,19 +20,19 @@ create_test_checkver "fresh" "1.0.0"
 
 TARGET_NAME=""
 FLAG_QUIET=0
-output=$(cmd_check 2>&1)
+output=$(cmd_update 2>&1)
 FLAG_QUIET=1
 assert_contains "$output" "up to date" "up to date detected"
 assert_contains "$output" "outdated" "outdated detected"
 assert_contains "$output" "not installed" "not installed detected"
 
-# Single package check
+# Single package update
 TARGET_NAME="outdated"
 FLAG_QUIET=0
-output=$(cmd_check 2>&1)
+output=$(cmd_update 2>&1)
 FLAG_QUIET=1
-assert_contains "$output" "installed=1.0.0" "single check shows installed"
-assert_contains "$output" "available=2.0.0" "single check shows available"
+assert_contains "$output" "installed=1.0.0" "single update shows installed"
+assert_contains "$output" "available=2.0.0" "single update shows available"
 
 teardown
 report "check"

@@ -28,15 +28,15 @@ assert_fail $? "find_conf_by_name ignores .disabled"
 find_conf_by_name "active" >/dev/null 2>&1
 assert_ok $? "find_conf_by_name finds active conf"
 
-# cmd_check should skip disabled package
+# cmd_update should skip disabled package
 create_test_checkver "active" "1.0.0"
 FLAG_QUIET=0
-output=$(cmd_check 2>&1)
+output=$(cmd_update 2>&1)
 FLAG_QUIET=1
-assert_contains "$output" "active" "check shows active package"
+assert_contains "$output" "active" "update shows active package"
 if echo "$output" | grep -q "skipped"; then
     TEST_FAIL=$((TEST_FAIL + 1))
-    echo "  FAIL: check should skip disabled package"
+    echo "  FAIL: update should skip disabled package"
 else
     TEST_PASS=$((TEST_PASS + 1))
 fi

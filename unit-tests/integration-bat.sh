@@ -64,11 +64,11 @@ assert_contains "$target" "bat-v${FAKE_VERSION}" "symlink contains version in pa
 output=$("${TEST_TMPDIR}/bin/bat" 2>&1)
 assert_eq "bat ${FAKE_VERSION}" "$output" "binary runs correctly"
 
-# --- Test: check (up to date) ---
+# --- Test: update (up to date) ---
 FLAG_QUIET=0
-output=$(cmd_check 2>&1)
+output=$(cmd_update 2>&1)
 FLAG_QUIET=1
-assert_contains "$output" "up to date" "check shows up to date"
+assert_contains "$output" "up to date" "update shows up to date"
 
 # --- Test: install skip (already current) ---
 FLAG_QUIET=0
@@ -107,16 +107,40 @@ cmd_install 2>/dev/null
 assert_ok $? "install recovers from stale state"
 assert_dir_exists "${OOB_LIVE}/bat" "install dir recreated"
 
-# --- Test: remove ---
+# --- Test: remove implies disable ---
 FLAG_FORCE=1
 cmd_remove 2>/dev/null
 assert_ok $? "remove succeeds"
 assert_file_not_exists "${OOB_STATE}/bat" "state removed"
 assert_file_not_exists "${TEST_TMPDIR}/bin/bat" "symlink removed"
+assert_file_exists "${OOB_CONF}/40-bat.disabled" "config disabled after remove"
 FLAG_FORCE=0
 
+# --- Test: list shows disabled ---
+FLAG_QUIET=0
+output=$(cmd_list 2>&1)
+FLAG_QUIET=1
+assert_contains "$output" "bat" "list includes disabled bat"
+assert_contains "$output" "disabled" "list shows disabled status"
+
+# --- Test: enable after remove ---
+cmd_enable 2>/dev/null
+assert_ok $? "enable after remove succeeds"
+assert_file_exists "${OOB_CONF}/40-bat" "config re-enabled"
+assert_file_not_exists "${OOB_CONF}/40-bat.disabled" "disabled file gone"
+
+# --- Test: disable ---
+cmd_disable 2>/dev/null
+assert_ok $? "disable succeeds"
+assert_file_exists "${OOB_CONF}/40-bat.disabled" "config disabled"
+
+# --- Test: upgrade skips disabled ---
+cmd_upgrade 2>/dev/null
+assert_file_not_exists "${OOB_STATE}/bat" "upgrade skips disabled package"
+
 # --- Test: integrity check (orphaned) ---
-# Reinstall then delete state
+# Re-enable, reinstall, then delete state
+cmd_enable 2>/dev/null
 cmd_install 2>/dev/null
 rm -f "${OOB_STATE}/bat"
 check_integrity "bat" "${OOB_LIVE}/bat"

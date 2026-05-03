@@ -1,14 +1,15 @@
 # apt-oob
 
-**apt-oob** is a lightweight out-of-band software manager for Debian-based systems. It manages software that has no apt repository — packages distributed as tarballs with a download URL — handling version checking, verification, installation, and symlinking.
+**apt-oob** is a lightweight out-of-band software manager for Debian-apt based systems. It's intended to manage software that has no apt repository and distributed as tarballs with a download URL. 
 
-apt-oob integrates with the standard apt upgrade process and runs automatically when `apt upgrade` or `apt-get upgrade` is invoked.
+Oob integrates with the standard apt upgrade process through an apt hook that runs automatically after `apt upgrade` or `apt-get upgrade`. It handles version checking, verification, installation, and symlinking binaries.
 
-This project is ai-assisted. I've been running it personally, on various systems, for a month or so to proof it out. The dev branch will be newer and less stable.
+This project is ai-assisted. I've been running it personally, on various systems, for a month or so to proof it out. The dev branch will be newer and less stable. 
 
 ---
 
 ## Installation
+git clone the repo and the run:
 
 ```
 sudo ./install.sh
@@ -21,11 +22,14 @@ sudo ./install.sh
 ## CLI Usage
 
 ```
-oob install [name]     # Install/update all configured packages, or a single package by NAME
-oob check [name]       # Check available versions without installing (all or single package)
-oob remove <name>      # Remove installed files from live/, symlinks, and state for a package
+oob update [name]      # Check available versions without installing (all or single package)
+oob upgrade            # Download and install all available updates
+oob install <name>     # Install or update a single package
+oob remove <name>      # Remove installed files, symlinks, and state for a package
 oob list               # List all configured packages and their installed versions
-oob status <name>      # Show detailed state for a single package
+oob status [name]      # Show system health, or detailed state for a single package
+oob enable <name>      # Enable a disabled package
+oob disable <name>     # Disable a package (skip during upgrade)
 oob init               # Install the apt post-invoke hook for automatic oob runs
 oob deinit             # Remove the apt post-invoke hook
 ```
@@ -34,7 +38,7 @@ oob deinit             # Remove the apt post-invoke hook
 
 | Flag | Description |
 |---|---|
-| `-f`, `--force` | `install`: re-download and reinstall regardless of version. `remove`: skip y/n confirmation prompt. |
+| `-f`, `--force` | `install`/`upgrade`: re-download and reinstall regardless of version. `remove`: skip y/n confirmation prompt. |
 | `-n`, `--dry-run` | Show what would happen without making changes. |
 | `-v`, `--verbose` | Increase terminal output detail. |
 | `-q`, `--quiet` | Suppress terminal output; log to file only. |
@@ -44,9 +48,9 @@ oob deinit             # Remove the apt post-invoke hook
 
 ---
 
-## Install Behavior
+## Upgrade Behavior
 
-`oob install` iterates over all conf.d entries in lexical order. For each package:
+`oob upgrade` iterates over all enabled conf.d entries in lexical order. For each package:
 
 1. The version check script runs to determine the latest available version.
 2. If the installed version (from state/) already matches, a message is logged and the package is skipped. With `--force`, this check is skipped and the package is reinstalled.
@@ -73,13 +77,13 @@ Before acting on a package, `oob` verifies that the state file and install direc
 - State exists but install directory is missing (stale state) — the state is removed and the package is treated as not installed.
 - Install directory exists but no state file (orphaned install) — a warning is printed. `oob remove` offers to clean up the orphaned directory.
 
-These checks run in `install`, `check`, `list`, `status`, and `remove`.
+These checks run in `upgrade`, `install`, `update`, `list`, `status`, and `remove`.
 
 `--dry-run` shows what would happen without downloading, extracting, or modifying any files.
 
-### Check
+### Update
 
-`oob check` runs version checks only without downloading or installing. Output per package (package names in white, status in cyan/magenta):
+`oob update` runs version checks only without downloading or installing. Output per package (package names in white, status in cyan/magenta):
 
 ```
 golang: installed=1.21.6 available=1.22.0
@@ -87,20 +91,26 @@ firefox: installed=148.0.2 available=148.0.2 (up to date)
 ```
 
 After listing all packages, a summary line is printed:
-- If updates or uninstalled packages exist: yellow warning with count and `Run 'oob install' to install/update.`
+- If updates or uninstalled packages exist: yellow warning with count and `Run 'oob upgrade' to install/update.`
 - If all packages are up to date: cyan informational message.
 
 ### Remove
 
-`oob remove <name>` removes the package's installed files from `live/`, any symlinks created via the config, and the state file. Always prompts y/n before proceeding unless `--force` is specified. `--dry-run` shows what would be removed without acting.
+`oob remove <name>` removes the package's installed files from `live/`, any symlinks created via the config, and the state file. The package config is also disabled (renamed to `.disabled`) to prevent it from being reinstalled on the next `oob upgrade`. Always prompts y/n before proceeding unless `--force` is specified. `--dry-run` shows what would be removed without acting.
 
 ### List
 
-`oob list` shows all configured packages (from conf.d) and their installed versions. Packages with a conf.d entry but no state file are shown as `configured, not installed`.
+`oob list` shows all configured packages (from conf.d) and their installed versions. Packages with a conf.d entry but no state file are shown as `configured, not installed`. Disabled packages are shown in yellow with `disabled` status.
+
+### Enable / Disable
+
+`oob enable <name>` re-enables a disabled package by renaming its config from `.disabled` back to the original name. `oob disable <name>` disables a package by appending `.disabled` to its config filename. Disabled packages are skipped by `upgrade` and `update`.
 
 ### Status
 
 `oob status <name>` shows the state file contents for a package and runs the version check script to report whether an update is available.
+
+`oob status` with no arguments shows a system-wide health summary: apt hook status, enabled/disabled package counts, update availability, symlink health, and a per-package overview.
 
 ### Init / Deinit
 
@@ -140,12 +150,12 @@ apt-oob registers itself as an apt post-invoke hook by dropping a configuration 
 ```
 # /etc/apt/apt.conf.d/99-apt-oob
 # Check for oob updates after apt update
-APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob check --terse; fi";};
+APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob update --terse; fi";};
 # Install oob updates after apt upgrade/full-upgrade
-DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob install --terse; fi";};
+DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob upgrade --terse; fi";};
 ```
 
-`APT::Update::Post-Invoke-Success` runs after `apt update` completes successfully, triggering `oob check` to report available updates. `DPkg::Post-Invoke` runs after dpkg processes packages during `apt upgrade` or `apt full-upgrade`, triggering `oob install` to download and install updates. Note: if `apt upgrade` has no apt packages to upgrade, dpkg is not invoked and `oob install` will not run — use `oob install` manually in that case. If `oob install` exits non-zero, apt may report a post-invoke failure even though the apt upgrade itself succeeded — `oob` should therefore be careful to only exit non-zero on genuine errors.
+`APT::Update::Post-Invoke-Success` runs after `apt update` completes successfully, triggering `oob update` to report available updates. `DPkg::Post-Invoke` runs after dpkg processes packages during `apt upgrade` or `apt full-upgrade`, triggering `oob upgrade` to download and install updates. Note: if `apt upgrade` has no apt packages to upgrade, dpkg is not invoked and `oob upgrade` will not run - use `oob upgrade` manually in that case. If `oob upgrade` exits non-zero, apt may report a post-invoke failure even though the apt upgrade itself succeeded - `oob` should therefore be careful to only exit non-zero on genuine errors.
 
 `oob init` writes this hook file. If the file already exists, `oob init` warns and prompts to overwrite. `oob deinit` removes it.
 
@@ -162,7 +172,8 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 │   ├── 20-thunderbird
 │   ├── 30-nextcloud-talk
 │   ├── 40-bat
-│   └── 50-golang
+│   ├── 50-golang
+│   └── 60-corretto
 ├── checkver/                # Version check scripts (print latest version string to stdout)
 │   ├── bat-check.sh
 │   ├── firefox-check.sh
@@ -221,13 +232,12 @@ DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oo
 
 Configuration files are plain shell-sourceable key=value files. They are loaded in lexical order - numeric prefixes (`10-`, `20-`) control precedence. Each file configures one package.
 
-Files ending in `.disabled` are skipped. To disable a package without removing its config:
+Files ending in `.disabled` are skipped during `upgrade` and `update`. Use `oob disable` and `oob enable` to manage this:
 
 ```bash
-mv conf.d/40-bat conf.d/40-bat.disabled
+oob disable bat    # renames conf.d/40-bat to conf.d/40-bat.disabled
+oob enable bat     # renames it back
 ```
-
-Rename it back to re-enable.
 
 ### Built-in Variables
 
@@ -270,6 +280,8 @@ This example shows how you would configure Amazon Corretto 26 (not bundled, show
 
 ```sh
 # conf.d/60-corretto
+# This file is sourced by oob. Shell variables (${VAR}) expand at load time.
+# %WORD% are template variables. See oob(1) for details.
 
 # Package name - used for directory naming under live/ and state/
 NAME="corretto"

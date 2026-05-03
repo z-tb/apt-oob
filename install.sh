@@ -51,4 +51,4 @@ fi
 
 echo ""
 echo "apt-oob installed to ${OOB_BASE}"
-echo "run 'oob check' to see available packages"
+echo "run 'oob update' to see available packages"

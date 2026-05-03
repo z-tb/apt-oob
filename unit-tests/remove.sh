@@ -25,6 +25,8 @@ cmd_remove
 assert_ok $? "force remove succeeds"
 assert_file_not_exists "${OOB_STATE}/rmpkg" "state removed"
 assert_file_not_exists "${TEST_TMPDIR}/bin/rmpkg" "symlink removed"
+assert_file_exists "${OOB_CONF}/rmpkg.disabled" "config disabled after remove"
+assert_file_not_exists "${OOB_CONF}/rmpkg" "enabled config removed after remove"
 
 # remove non-existent
 TARGET_NAME="nonexistent"
