@@ -22,8 +22,9 @@ FLAG_DRYRUN=0
 FLAG_VERBOSE=0
 FLAG_QUIET=0
 FLAG_TERSE=0
+FLAG_FIX=0
 
-OOB_VERSION="0.1.0"
+OOB_VERSION="0.6.1"
 
 # Banner style: none, simple, fancy (default: fancy)
 : "${BANNER:="fancy"}"
@@ -187,6 +188,7 @@ commands:
   remove <name>      Remove installed files, symlinks, and state for a package
   list               List all configured packages and their installed versions
   status [name]      Show system health, or detailed state for a single package
+                     Use --fix to repair permission issues
   enable <name>      Enable a disabled package
   disable <name>     Disable a package (skip during upgrade)
   init               Create directory structure and install apt hook
@@ -215,6 +217,7 @@ parse_args() {
             -v|--verbose) FLAG_VERBOSE=1 ;;
             -q|--quiet)   FLAG_QUIET=1 ;;
             -t|--terse)   FLAG_TERSE=1 ;;
+            --fix)        FLAG_FIX=1 ;;
             -h|--help)    show_help; exit 0 ;;
             --version|-V) echo "oob ${OOB_VERSION}"; exit 0 ;;
             update|upgrade|install|remove|list|status|enable|disable|init|deinit)
@@ -299,6 +302,121 @@ find_conf_by_name() {
         fi
     done
     return 1
+}
+
+
+# --- Helper: permission checks ---
+# Returns the number of permission issues found.
+# If fix=1, corrects ownership and modes.
+check_permissions() {
+    local fix="${1:-0}"
+    local issues=0
+
+    # Check ownership: everything under OOB_BASE should be root:root
+    local bad_owner
+    bad_owner=$(find "$OOB_BASE" -not -user root -o -not -group root 2>/dev/null | head -1)
+    if [[ -n "$bad_owner" ]]; then
+        issues=$((issues + 1))
+        if (( fix )); then
+            chown -R root:root "$OOB_BASE"
+            info "fixed ownership to root:root under ${OOB_BASE}"
+        else
+            warn "permissions: files not owned by root:root under ${OOB_BASE}"
+        fi
+    fi
+
+    # Check directories: should be 755 (allow setgid 2755 from parent)
+    local bad_dir
+    bad_dir=$(find "$OOB_BASE" -type d ! -perm 755 ! -perm 2755 -print -quit 2>/dev/null)
+    if [[ -n "$bad_dir" ]]; then
+        issues=$((issues + 1))
+        if (( fix )); then
+            find "$OOB_BASE" -type d ! -perm 755 ! -perm 2755 -exec chmod 755 {} +
+            info "fixed directory permissions to 755"
+        else
+            warn "permissions: directories with incorrect mode under ${OOB_BASE}"
+        fi
+    fi
+
+    # Check scripts: .sh files and bin/oob should be 755
+    local bad_script
+    bad_script=$(find "$OOB_BASE" \( -name '*.sh' -o -path '*/bin/oob' \) ! -perm 755 -print -quit 2>/dev/null)
+    if [[ -n "$bad_script" ]]; then
+        issues=$((issues + 1))
+        if (( fix )); then
+            find "$OOB_BASE" \( -name '*.sh' -o -path '*/bin/oob' \) -exec chmod 755 {} +
+            info "fixed script permissions to 755"
+        else
+            warn "permissions: scripts with incorrect mode under ${OOB_BASE}"
+        fi
+    fi
+
+    # Check config files: conf.d/* (not .sh) should be 644
+    local bad_conf
+    bad_conf=$(find "$OOB_CONF" -type f ! -name '*.sh' ! -perm 644 -print -quit 2>/dev/null)
+    if [[ -n "$bad_conf" ]]; then
+        issues=$((issues + 1))
+        if (( fix )); then
+            find "$OOB_CONF" -type f ! -name '*.sh' -exec chmod 644 {} +
+            info "fixed config permissions to 644"
+        else
+            warn "permissions: config files with incorrect mode under ${OOB_CONF}"
+        fi
+    fi
+
+    # Check apt hook: should be 644 root:root
+    if [[ -f "$APT_HOOK" ]]; then
+        local hook_perms hook_owner
+        hook_perms=$(stat -c '%a' "$APT_HOOK" 2>/dev/null)
+        hook_owner=$(stat -c '%U:%G' "$APT_HOOK" 2>/dev/null)
+        if [[ "$hook_perms" != "644" || "$hook_owner" != "root:root" ]]; then
+            issues=$((issues + 1))
+            if (( fix )); then
+                chmod 644 "$APT_HOOK"
+                chown root:root "$APT_HOOK"
+                info "fixed apt hook permissions: ${APT_HOOK}"
+            else
+                warn "permissions: apt hook has incorrect mode/owner: ${APT_HOOK}"
+            fi
+        fi
+    fi
+
+    # Check global config: should be 644 root:root
+    local global_conf="${OOB_CONF_FILE:-/etc/apt-oob.conf}"
+    if [[ -f "$global_conf" ]]; then
+        local conf_perms conf_owner
+        conf_perms=$(stat -c '%a' "$global_conf" 2>/dev/null)
+        conf_owner=$(stat -c '%U:%G' "$global_conf" 2>/dev/null)
+        if [[ "$conf_perms" != "644" || "$conf_owner" != "root:root" ]]; then
+            issues=$((issues + 1))
+            if (( fix )); then
+                chmod 644 "$global_conf"
+                chown root:root "$global_conf"
+                info "fixed config permissions: ${global_conf}"
+            else
+                warn "permissions: config has incorrect mode/owner: ${global_conf}"
+            fi
+        fi
+    fi
+
+    # Check log file: should be 644 root:root
+    if [[ -f "$LOG_FILE" ]]; then
+        local log_perms log_owner
+        log_perms=$(stat -c '%a' "$LOG_FILE" 2>/dev/null)
+        log_owner=$(stat -c '%U:%G' "$LOG_FILE" 2>/dev/null)
+        if [[ "$log_perms" != "644" || "$log_owner" != "root:root" ]]; then
+            issues=$((issues + 1))
+            if (( fix )); then
+                chmod 644 "$LOG_FILE"
+                chown root:root "$LOG_FILE"
+                info "fixed log file permissions: ${LOG_FILE}"
+            else
+                warn "permissions: log file has incorrect mode/owner: ${LOG_FILE}"
+            fi
+        fi
+    fi
+
+    return "$issues"
 }
 
 
@@ -666,6 +784,7 @@ INSTALL_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 INSTALL_PATH="${install_path}"
 SYMLINKS="${resolved_symlinks}"
 EOF
+    chmod 644 "$tmp"
     mv "$tmp" "${OOB_STATE}/${name}"
 }
 
@@ -1230,6 +1349,24 @@ cmd_status() {
         info "symlinks:    OK"
     fi
 
+    # Permission check
+    local perm_issues=0
+    if (( FLAG_FIX )); then
+        check_permissions 1 || perm_issues=$?
+        if (( perm_issues == 0 )); then
+            info "permissions: OK"
+        else
+            info "permissions: fixed ${perm_issues} issue(s)"
+        fi
+    else
+        check_permissions 0 || perm_issues=$?
+        if (( perm_issues == 0 )); then
+            info "permissions: OK"
+        else
+            warn "permissions: ${perm_issues} issue(s). Run 'oob status --fix' to repair."
+        fi
+    fi
+
     echo ""
     for line in "${pkg_lines[@]}"; do
         fmt_print "INFO" "$line"
@@ -1335,6 +1472,8 @@ cmd_init() {
 # Banner style displayed on startup: fancy, simple, or none.
 #BANNER="fancy"
 CONF
+        chmod 644 "$conf"
+        chown root:root "$conf"
         success "wrote default config: ${conf}"
     fi
 
@@ -1357,6 +1496,7 @@ INSTALL_DIR="${OOB_LIVE}/${NAME}"
 SYMLINKS="firefox:firefox/firefox"
 SYMLINK_DIR="/usr/local/bin"
 CONF
+            chmod 644 "${OOB_CONF}/10-firefox"
 
             cat > "${OOB_CHECKVER}/firefox-check.sh" <<'SCRIPT'
 #!/bin/bash
@@ -1406,6 +1546,8 @@ APT::Update::Post-Invoke-Success {"if [ -x /usr/local/apt-oob/bin/oob ]; then /u
 # Install oob updates after apt upgrade/full-upgrade
 DPkg::Post-Invoke {"if [ -x /usr/local/apt-oob/bin/oob ]; then /usr/local/apt-oob/bin/oob upgrade --terse; fi";};
 EOF
+    chmod 644 "$APT_HOOK"
+    chown root:root "$APT_HOOK"
 
     success "apt hook installed: ${APT_HOOK}"
 }
@@ -1438,8 +1580,10 @@ main() {
 
     show_banner
 
-    # Ensure log file exists
-    touch "$LOG_FILE" 2>/dev/null || true
+    # Ensure log file exists with secure permissions
+    if [[ ! -f "$LOG_FILE" ]]; then
+        touch "$LOG_FILE" 2>/dev/null && chmod 644 "$LOG_FILE" 2>/dev/null || true
+    fi
 
     case "$COMMAND" in
         update)  cmd_update ;;

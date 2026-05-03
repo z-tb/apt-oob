@@ -37,3 +37,16 @@ for f in $(eval "$REMOTE_LS" || true); do
 done
 
 rsync -av "${EXCLUDES[@]}" conf.d/ "$DEST/conf.d/"
+
+# Fix permissions after sync
+if [[ "$DEST" == *:* ]]; then
+    HOST="${DEST%%:*}"
+    RPATH="${DEST#*:}"
+    ssh "$HOST" "chown -R root:root ${RPATH} && find ${RPATH} -type d -exec chmod 755 {} + && find ${RPATH} -name '*.sh' -o -path '*/bin/oob' | xargs chmod 755 && find ${RPATH}/conf.d -type f ! -name '*.sh' -exec chmod 644 {} +"
+else
+    chown -R root:root "$DEST"
+    find "$DEST" -type d -exec chmod 755 {} +
+    find "$DEST" \( -name '*.sh' -o -path '*/bin/oob' \) -exec chmod 755 {} +
+    find "$DEST/conf.d" -type f ! -name '*.sh' -exec chmod 644 {} +
+fi
+echo "permissions fixed"

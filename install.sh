@@ -23,7 +23,12 @@ for dir in conf.d checkver checksum dload keys; do
         # Skip if repo lives inside OOB_BASE (source and dest are the same file)
         [[ "$(realpath "$f")" == "$(realpath "$dest/$(basename "$f")" 2>/dev/null)" ]] && continue
         cp "$f" "$dest/"
-        chmod +x "$dest/$(basename "$f")" 2>/dev/null || true
+        # Scripts get 755, config files get 644
+        if [[ "$f" == *.sh ]]; then
+            chmod 755 "$dest/$(basename "$f")"
+        else
+            chmod 644 "$dest/$(basename "$f")"
+        fi
         echo "  installed: ${dest}/$(basename "$f")"
     done
 done
@@ -51,4 +56,5 @@ fi
 
 echo ""
 echo "apt-oob installed to ${OOB_BASE}"
+chown -R root:root "$OOB_BASE"
 echo "run 'oob update' to see available packages"

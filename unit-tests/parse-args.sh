@@ -33,5 +33,10 @@ parse_args "install" 2>/dev/null
 output=$(cmd_install 2>&1)
 assert_fail $? "install without name fails"
 
+# --fix flag should be accepted
+FLAG_FIX=0
+parse_args "status" "--fix" 2>/dev/null
+assert_eq 1 "$FLAG_FIX" "parse_args accepts --fix"
+
 teardown
 report "parse-args"
